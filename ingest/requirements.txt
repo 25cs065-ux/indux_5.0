@@ -1,0 +1,9 @@
+# ingest/requirements.txt
+#
+# Python dependencies for the ingest module.
+#
+# Install with:
+#   python -m pip install -r ingest/requirements.txt
+
+pypdf>=4.0.0        # Pure-Python PDF text extraction (no C extensions needed)
+pytest>=8.0.0       # Test runner
