@@ -52,15 +52,9 @@ def _make_pdf(pages: list[str]) -> bytes:
     # an additional library (reportlab, fpdf2, etc.).
     from pypdf import PdfWriter
     from pypdf.generic import (
-        ArrayObject,
-        ContentStream,
         DecodedStreamObject,
         DictionaryObject,
-        FloatObject,
         NameObject,
-        NumberObject,
-        RectangleObject,
-        TextStringObject,
     )
 
     writer = PdfWriter()
@@ -194,9 +188,11 @@ class TestFileValidation:
 
     def test_corrupt_pdf_raises(self, tmp_path):
         corrupt = tmp_path / "corrupt.pdf"
-        # Start with the magic header but then garbage — pypdf will fail to parse.
+        # Start with the magic header but then garbage.
+        # pypdf either raises PdfReadError (corrupt) or reports 0 pages — both
+        # are caught and re-raised as IngestError by the implementation.
         corrupt.write_bytes(b"%PDF-1.4\n" + b"\x00" * 50)
-        with pytest.raises(IngestError):
+        with pytest.raises(IngestError, match="(?i)(corrupt|no pages|read)"):
             ingest_pdf(corrupt)
 
     def test_invalid_chunk_size_raises(self, tmp_path):
@@ -415,3 +411,131 @@ class TestChunkingParameters:
                 assert end_of_first == start_of_second
         finally:
             f.unlink(missing_ok=True)
+
+    def test_overlap_near_chunk_size_still_terminates(self):
+        # chunk_overlap = chunk_size - 1 is technically valid (step = 1).
+        # This test confirms the loop terminates and returns at least one chunk
+        # rather than hanging or raising.
+        text = "AB" * 20  # 40 chars
+        result = _split_text(text, chunk_size=10, chunk_overlap=9)
+        # step=1, so we get many chunks — verify it's finite and non-empty.
+        assert len(result) > 0
+        assert all(len(c) <= 10 for c in result)
+
+
+# ---------------------------------------------------------------------------
+# Integration / smoke test — end-to-end through a real temporary file
+# ---------------------------------------------------------------------------
+
+class TestIntegrationSmoke:
+    """
+    Full end-to-end smoke test.
+
+    Writes a temporary PDF to disk, calls ingest_pdf(), and verifies that
+    every piece of metadata on every returned chunk is exactly correct.
+    This is the single test that would catch a wiring mistake between any
+    two stages of the pipeline (extraction → splitting → metadata attachment).
+    """
+
+    def test_full_pipeline_metadata_on_every_chunk(self, tmp_path):
+        """
+        Three-page PDF with distinct text on each page.
+        After ingestion every chunk must carry the right doc_id, the right
+        1-based page_number, a sequential chunk_index, and non-empty text.
+        """
+        pages = [
+            "Boiler system overview. Safety valve must open at 15 bar.",
+            "Pump assembly instructions. Lubricate bearings every 500 hours.",
+            "Emergency shutdown procedure. Pull red handle and call supervisor.",
+        ]
+        pdf_bytes = _make_pdf(pages)
+        pdf_file = tmp_path / "smoke_manual.pdf"
+        pdf_file.write_bytes(pdf_bytes)
+
+        result = ingest_pdf(pdf_file, doc_id="smoke_manual_v1")
+
+        # --- Top-level result fields ----------------------------------------
+        assert result.doc_id == "smoke_manual_v1"
+        assert result.total_pages == 3
+        assert result.scanned_warning is False
+        assert result.empty_pages == []          # all pages have text
+        assert len(result.chunks) >= 3           # at least one chunk per page
+
+        # --- Per-chunk invariants -------------------------------------------
+        for i, chunk in enumerate(result.chunks):
+            # chunk_index must be 0-based sequential across the whole document
+            assert chunk.chunk_index == i, (
+                f"chunk at position {i} has chunk_index={chunk.chunk_index}"
+            )
+            # doc_id must match what was passed in
+            assert chunk.doc_id == "smoke_manual_v1", (
+                f"chunk {i} has wrong doc_id: {chunk.doc_id!r}"
+            )
+            # page_number must be 1-based and within the document range
+            assert 1 <= chunk.page_number <= 3, (
+                f"chunk {i} has out-of-range page_number={chunk.page_number}"
+            )
+            # text must be a non-empty string
+            assert isinstance(chunk.text, str) and chunk.text.strip(), (
+                f"chunk {i} has empty or non-string text"
+            )
+
+        # --- Page coverage --------------------------------------------------
+        # Every page that has text must be represented by at least one chunk.
+        pages_in_chunks = {c.page_number for c in result.chunks}
+        assert pages_in_chunks == {1, 2, 3}, (
+            f"Expected chunks from pages {{1,2,3}}, got {pages_in_chunks}"
+        )
+
+    def test_smoke_empty_page_in_middle_is_skipped_cleanly(self, tmp_path):
+        """
+        Five-page PDF where page 3 is blank.
+        Confirms that the blank page is in empty_pages, no chunk references it,
+        and pages 1, 2, 4, 5 are all represented.
+        """
+        pages = [
+            "Page one: valve specifications.",
+            "Page two: pressure readings.",
+            "",                                   # blank — page 3
+            "Page four: maintenance log format.",
+            "Page five: contact list.",
+        ]
+        pdf_bytes = _make_pdf(pages)
+        pdf_file = tmp_path / "smoke_blank_middle.pdf"
+        pdf_file.write_bytes(pdf_bytes)
+
+        result = ingest_pdf(pdf_file)
+
+        assert result.total_pages == 5
+        assert 3 in result.empty_pages
+        assert all(c.page_number != 3 for c in result.chunks)
+        pages_in_chunks = {c.page_number for c in result.chunks}
+        assert {1, 2, 4, 5}.issubset(pages_in_chunks)
+
+    def test_smoke_scanned_pdf_returns_warning_not_error(self, tmp_path):
+        """
+        Image-only PDF (all blank pages) must return IngestResult with
+        scanned_warning=True and zero chunks — never raise an exception.
+        """
+        pdf_bytes = _make_pdf(["", "", ""])
+        pdf_file = tmp_path / "smoke_scanned.pdf"
+        pdf_file.write_bytes(pdf_bytes)
+
+        result = ingest_pdf(pdf_file)
+
+        assert isinstance(result, IngestResult)
+        assert result.scanned_warning is True
+        assert result.chunks == []
+        assert result.total_pages == 3
+        assert result.empty_pages == [1, 2, 3]
+
+    def test_smoke_invalid_pdf_raises_ingest_error(self, tmp_path):
+        """
+        A file with a .pdf extension but non-PDF content must raise
+        IngestError, not any other exception type.
+        """
+        bad_file = tmp_path / "not_a_pdf.pdf"
+        bad_file.write_bytes(b"JFIF" + b"\x00" * 100)   # JPEG-like bytes
+
+        with pytest.raises(IngestError):
+            ingest_pdf(bad_file)
