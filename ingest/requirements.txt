@@ -15,6 +15,7 @@ sentence-transformers>=2.2.0   # Local embedding model (no API key needed)
 
 # --- Database (Supabase) ---------------------------------------------------
 supabase>=2.0.0           # Supabase Python client (upsert chunks + embeddings)
+python-dotenv>=1.0.0      # Load SUPABASE_URL / SUPABASE_KEY from .env at runtime
 
 # --- Development / testing -------------------------------------------------
 pytest>=8.0.0             # Test runner

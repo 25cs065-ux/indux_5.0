@@ -46,6 +46,9 @@ import logging
 from typing import List, Optional
 
 from .pdf_ingestor import Chunk, BoundingBox
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
