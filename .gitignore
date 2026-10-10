@@ -1,1 +1,5 @@
    docs/manuals/*.pdf
+   .venv/
+.env
+__pycache__/
+*.py[cod]
