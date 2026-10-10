@@ -1,40 +1,54 @@
 -- ingest/schema.sql
 --
--- Supabase schema for Indux 5.0  --  updated to match ai/brain.py
+-- Fresh Supabase setup for Indux 5.0.
 --
--- Run this in your Supabase project SQL Editor
---   Dashboard -> SQL Editor -> New query -> paste -> Run
--- All statements use IF NOT EXISTS / OR REPLACE so they are safe to re-run.
+-- HOW TO RUN:
+--   1. Open your Supabase project: https://supabase.com/dashboard
+--   2. Click "SQL Editor" in the left sidebar
+--   3. Click "New query"
+--   4. Paste this entire file and click "Run"
+--   5. You should see "Success. No rows returned." for each statement.
 --
--- Tables / objects created:
---   public.manual_chunks        -- ingested PDF chunks + embeddings
---   public.match_manual_chunks  -- RPC called by ai/brain.py for vector search
+-- What this creates:
+--   public.manual_chunks       — table for PDF chunk text + embeddings
+--   public.match_manual_chunks — RPC function for vector similarity search
 --
--- Required environment variables (ingest/.env):
---   SUPABASE_URL    : https://<project-ref>.supabase.co
---   SUPABASE_KEY    : service-role key (needs INSERT / UPDATE access)
---   GEMINI_API_KEY  : Google AI Studio key (used by embedder and brain)
+-- Safe for a FRESH database with no data.
+-- If the table already exists with wrong columns, it is dropped and recreated.
 
--- ---------------------------------------------------------------------------
--- Step 1: pgvector extension (once per Supabase project)
--- ---------------------------------------------------------------------------
+-- ============================================================================
+-- Step 1: Enable pgvector extension
+-- Required for the VECTOR column type and similarity operators.
+-- Only needs to run once per Supabase project; safe to re-run.
+-- ============================================================================
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- ---------------------------------------------------------------------------
--- Step 2: main table
+-- ============================================================================
+-- Step 2: Drop and recreate the table (fresh setup — no data to preserve)
 --
--- Column contract (must match both ingest/storage.py and ai/brain.py):
---   id           : "{doc_id}_{chunk_index:05d}" — natural primary key
---   content      : chunk text           — brain reads c.get("content")
---   manual_title : doc_id from ingest   — brain reads c.get("manual_title")
---   page_number  : 1-based page         — brain reads c.get("page_number")
---   section      : chunk_type value     — brain reads c.get("section")
---   chunk_index  : 0-based position within the document
---   embedding    : VECTOR(3072)         — gemini-embedding-001 dimension
---   bbox_*       : bounding-box coords from PyMuPDF (NULL when unavailable)
---   ingested_at  : set by DB DEFAULT now()
--- ---------------------------------------------------------------------------
-CREATE TABLE IF NOT EXISTS public.manual_chunks (
+-- We drop first to avoid PGRST204 errors caused by any previously created
+-- table that is missing columns (e.g. bbox_x0 / bbox_y0 / bbox_x1 / bbox_y1).
+--
+-- Column source of truth:
+--   ingest/storage.py  _chunk_to_row()  — writes these columns
+--   ai/brain.py        search_chunks()  — reads these columns
+--
+--   id            TEXT  — "{doc_id}_{chunk_index:05d}"  (primary key)
+--   content       TEXT  — chunk text        brain: c.get("content")
+--   manual_title  TEXT  — doc_id            brain: c.get("manual_title")
+--   page_number   INT   — 1-based page      brain: c.get("page_number")
+--   section       TEXT  — chunk_type        brain: c.get("section")
+--   chunk_index   INT   — 0-based position  (storage only)
+--   embedding     VECTOR(3072)  — gemini-embedding-001 output
+--   bbox_x0       REAL  — bounding box from PyMuPDF (NULL when unavailable)
+--   bbox_y0       REAL
+--   bbox_x1       REAL
+--   bbox_y1       REAL
+--   ingested_at   TIMESTAMPTZ  — set automatically by the database
+-- ============================================================================
+DROP TABLE IF EXISTS public.manual_chunks CASCADE;
+
+CREATE TABLE public.manual_chunks (
     id            TEXT        PRIMARY KEY,
     content       TEXT        NOT NULL,
     manual_title  TEXT        NOT NULL,
@@ -49,34 +63,39 @@ CREATE TABLE IF NOT EXISTS public.manual_chunks (
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- ---------------------------------------------------------------------------
--- Step 3: indexes
--- ---------------------------------------------------------------------------
+-- ============================================================================
+-- Step 3: Indexes
+-- ============================================================================
 
--- Approximate nearest-neighbour (cosine) index.
--- lists=100 is suitable for up to ~1 M rows; increase for larger collections.
--- For best performance, build AFTER the first bulk load.
-CREATE INDEX IF NOT EXISTS manual_chunks_embedding_idx
+-- Cosine-similarity approximate nearest-neighbour index (pgvector ivfflat).
+-- lists=100 is appropriate for up to ~1 million rows.
+-- Build time is fast on an empty table; the index fills as rows are inserted.
+CREATE INDEX manual_chunks_embedding_idx
     ON public.manual_chunks
     USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
--- Lookup by manual_title for document-scoped queries.
-CREATE INDEX IF NOT EXISTS manual_chunks_manual_title_idx
+-- Fast lookup when filtering chunks by document.
+CREATE INDEX manual_chunks_manual_title_idx
     ON public.manual_chunks (manual_title);
 
--- ---------------------------------------------------------------------------
--- Step 4: match_manual_chunks RPC
+-- ============================================================================
+-- Step 4: match_manual_chunks RPC function
 --
--- Called by ai/brain.py:
+-- Called by ai/brain.py as:
 --   supabase.rpc("match_manual_chunks", {
---       "query_embedding": <3072-float list>,
+--       "query_embedding": <list of 3072 floats>,
 --       "match_count": <int>
 --   }).execute()
 --
--- Returns: id, content, manual_title, page_number, section, distance
--- brain.py filters results where distance <= 0.65 (cosine distance).
--- ---------------------------------------------------------------------------
+-- brain.py then reads from each returned row:
+--   item.get("id")
+--   item.get("content")
+--   item.get("manual_title")
+--   item.get("page_number")
+--   item.get("section")
+--   item.get("distance")   <- filtered at <= 0.65 (cosine distance)
+-- ============================================================================
 CREATE OR REPLACE FUNCTION public.match_manual_chunks(
     query_embedding VECTOR(3072),
     match_count     INT DEFAULT 5
@@ -104,15 +123,25 @@ AS $$
     LIMIT match_count;
 $$;
 
--- ---------------------------------------------------------------------------
--- Verification queries (run after ingestion):
+-- ============================================================================
+-- Verification queries — run these AFTER ingestion to confirm everything works
 --
---   SELECT manual_title, count(*) AS chunks
---   FROM public.manual_chunks
---   GROUP BY manual_title
---   ORDER BY chunks DESC;
+-- 1. Check row count per manual:
+--    SELECT manual_title, count(*) AS chunks
+--    FROM public.manual_chunks
+--    GROUP BY manual_title
+--    ORDER BY chunks DESC;
 --
---   SELECT * FROM match_manual_chunks(
---       array_fill(0.0::float, ARRAY[3072])::vector, 3
---   );
--- ---------------------------------------------------------------------------
+-- 2. Confirm the RPC function works (returns 0 rows on empty table):
+--    SELECT * FROM match_manual_chunks(
+--        array_fill(0.0::float, ARRAY[3072])::vector,
+--        3
+--    );
+--
+-- 3. Confirm all columns exist:
+--    SELECT column_name, data_type
+--    FROM information_schema.columns
+--    WHERE table_schema = 'public'
+--      AND table_name   = 'manual_chunks'
+--    ORDER BY ordinal_position;
+-- ============================================================================
