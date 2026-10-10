@@ -1,5 +1,12 @@
-   docs/manuals/*.pdf
-   .venv/
+# Manual PDFs
+docs/manuals/*.pdf
+
+# Python virtual environment
+.venv/
+
+# Environment variables and API secrets
 .env
+
+# Python cache files
 __pycache__/
 *.py[cod]
