@@ -18,4 +18,4 @@ class QueryResponse(BaseModel):
     safety_checklist: List[str] = Field(default_factory=list)
     steps: List[StepItem] = Field(default_factory=list)
     sources: List[SourceReference] = Field(default_factory=list)
-    escalate_to_engineer: bool = False
+    escalate: bool = False

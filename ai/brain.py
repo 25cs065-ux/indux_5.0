@@ -102,6 +102,7 @@ def search_chunks(question: str, top_k: int = 5) -> List[Dict[str, Any]]:
             combined.append(chunk)
 
     return combined
+
 def ask(
     question: str, 
     machine_id: Optional[str] = "Compressor #01", 
@@ -118,7 +119,7 @@ def ask(
             safety_checklist=safety_items,
             steps=[],
             sources=[],
-            escalate_to_engineer=True
+            escalate=True
         )
         return not_found_obj.model_dump()
 
@@ -149,7 +150,7 @@ VERIFIED MANUAL CHUNKS:
 
 OUTPUT RULES:
 - Output valid JSON adhering to the specified schema.
-- If the chunks do not contain a solution, return status="NOT_FOUND", empty steps list [], and escalate_to_engineer=true.
+- If the chunks do not contain a solution, return status="NOT_FOUND", empty steps list [], and escalate=true.
 - Break fixes into short, clear, numbered steps. Each step must have a yes/no verification question.
 - Cite the manual and page accurately.
 - Categorize problem_type into one of: ['overheating', 'low pressure', 'oil leak', 'electrical', 'noise', 'belt', 'general'].
@@ -178,7 +179,7 @@ OUTPUT RULES:
             summary=f"Failed to parse AI response: {str(e)}",
             steps=[],
             sources=[],
-            escalate_to_engineer=True
+            escalate=True
         ).model_dump()
 
 def diagnose_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> Dict[str, Any]:
