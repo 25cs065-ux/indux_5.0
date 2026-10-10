@@ -3,11 +3,12 @@
 #
 # One-command ingestion entry point for Indux 5.0.
 #
-# Usage
-# -----
-#   py ingest/run_ingest.py path/to/manual.pdf
+# Usage (from repository root)
+# ----------------------------
+#   py -m ingest.run_ingest path/to/manual.pdf          ← preferred
+#   py ingest/run_ingest.py path/to/manual.pdf           ← also works
 #   py ingest/run_ingest.py path/to/manual.pdf --doc-id boiler_manual_v3
-#   py ingest/run_ingest.py path/to/manual.pdf --dry-run   # skip DB write
+#   py ingest/run_ingest.py path/to/manual.pdf --dry-run
 #   py ingest/run_ingest.py path/to/manual.pdf --chunk-size 600 --overlap 100
 #
 # Environment variables
@@ -31,6 +32,16 @@ import logging
 import sys
 import time
 from pathlib import Path
+
+# ---------------------------------------------------------------------------
+# Ensure the repository root is on sys.path so that `from ingest.*` works
+# whether this file is run as a script (py ingest/run_ingest.py) or as a
+# module (py -m ingest.run_ingest).  The insert is a no-op when the path is
+# already present (e.g. via PYTHONPATH or pytest).
+# ---------------------------------------------------------------------------
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
 
 # ---------------------------------------------------------------------------
 # Logging configuration — INFO by default, DEBUG with --verbose
@@ -123,11 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"  Ingesting: {pdf_path.name}")
     print(f"{'='*60}")
 
-    try:
-        from ingest.pdf_ingestor import ingest_pdf, IngestError
-    except ImportError:
-        # Allow running as a module inside the package
-        from pdf_ingestor import ingest_pdf, IngestError  # type: ignore
+    from ingest.pdf_ingestor import ingest_pdf, IngestError
 
     logger.info("Step 1/3 — Extracting text from '%s' …", pdf_path)
     try:
@@ -163,13 +170,10 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------
     # Step 2 — Embed
     # ------------------------------------------------------------------
+    from ingest.embedder import embed_chunks, EmbeddingError
+
     logger.info("Step 2/3 — Embedding %d chunks …", len(result.chunks))
     try:
-        try:
-            from ingest.embedder import embed_chunks, EmbeddingError
-        except ImportError:
-            from embedder import embed_chunks, EmbeddingError  # type: ignore
-
         embeddings = embed_chunks(
             result.chunks,
             batch_size=args.batch_size,
@@ -185,6 +189,8 @@ def main(argv: list[str] | None = None) -> int:
     # ------------------------------------------------------------------
     # Step 3 — Save to Supabase (skipped in dry-run mode)
     # ------------------------------------------------------------------
+    from ingest.storage import save_chunks, StorageError
+
     if args.dry_run:
         _print_warning(
             "--dry-run mode: skipping Supabase write.  "
@@ -193,11 +199,6 @@ def main(argv: list[str] | None = None) -> int:
     else:
         logger.info("Step 3/3 — Saving %d chunks to Supabase …", len(result.chunks))
         try:
-            try:
-                from ingest.storage import save_chunks, StorageError
-            except ImportError:
-                from storage import save_chunks, StorageError  # type: ignore
-
             saved = save_chunks(result.chunks, embeddings)
             logger.info("Saved %d rows to Supabase.", saved)
         except StorageError as exc:
