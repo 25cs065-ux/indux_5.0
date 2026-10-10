@@ -1,4 +1,4 @@
-﻿# Python cache files
+# Python cache files
 __pycache__/
 *.py[cod]
 
@@ -8,17 +8,18 @@ __pycache__/
 # Virtual environments
 .venv/
 venv/
+ai/venv/
 
 # Environment variables and secrets
 .env
 .env.*
+ai/.env
 
 # Keep the example environment file
 !.env.example
-__pycache__/
-*.py[cod]
-.pytest_cache/
+
+# Admin app - uploaded PDFs are transient and must not be committed
 admin-app/uploads/
-.env
-.env.*
-!.env.example
+
+# PDF manuals stored in docs/
+docs/manuals/*.pdf

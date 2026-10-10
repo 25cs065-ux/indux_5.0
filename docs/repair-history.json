@@ -1,0 +1,15 @@
+[
+  {"id": "H01", "machine_id": "compressor-01", "date": "2026-01-12", "problem_type": "overheating", "problem": "High temperature warning during afternoon shift", "action": "Cleaned cooler fins and checked oil level", "resolved": true},
+  {"id": "H02", "machine_id": "compressor-01", "date": "2026-02-20", "problem_type": "oil_leak", "problem": "Oil seen under the oil filter housing", "action": "Tightened filter and replaced seal", "resolved": true},
+  {"id": "H03", "machine_id": "compressor-01", "date": "2026-03-18", "problem_type": "low_pressure", "problem": "Pressure dropped below set value during peak load", "action": "Replaced clogged air intake filter", "resolved": true},
+  {"id": "H04", "machine_id": "compressor-01", "date": "2026-05-06", "problem_type": "noise", "problem": "Rattling noise near the motor side", "action": "Found loose guard and tightened bolts", "resolved": true},
+  {"id": "H05", "machine_id": "compressor-01", "date": "2026-07-15", "problem_type": "electrical", "problem": "Motor overload trip", "action": "Electrician tightened a loose terminal and reset", "resolved": true},
+  {"id": "H06", "machine_id": "compressor-01", "date": "2026-09-22", "problem_type": "overheating", "problem": "Temperature warning again on a hot day", "action": "Cooler cleaned; deep clean advised", "resolved": false},
+
+  {"id": "H07", "machine_id": "compressor-02", "date": "2026-01-28", "problem_type": "low_pressure", "problem": "Pressure not reaching the set point", "action": "Cleaned a stuck condensate drain valve", "resolved": true},
+  {"id": "H08", "machine_id": "compressor-02", "date": "2026-03-03", "problem_type": "belt", "problem": "Squealing noise at startup", "action": "Adjusted drive belt tension", "resolved": true},
+  {"id": "H09", "machine_id": "compressor-02", "date": "2026-04-19", "problem_type": "oil_leak", "problem": "Small oil drip near the oil cooler hose", "action": "Replaced hose clamp", "resolved": true},
+  {"id": "H10", "machine_id": "compressor-02", "date": "2026-06-10", "problem_type": "noise", "problem": "Strong vibration at full load", "action": "Rebalanced the mounting pads", "resolved": true},
+  {"id": "H11", "machine_id": "compressor-02", "date": "2026-08-02", "problem_type": "electrical", "problem": "Controller fault light on and off", "action": "Reseated the connector and the fault cleared", "resolved": true},
+  {"id": "H12", "machine_id": "compressor-02", "date": "2026-09-30", "problem_type": "overheating", "problem": "High oil temperature alarm", "action": "Replaced oil and oil filter", "resolved": true}
+]

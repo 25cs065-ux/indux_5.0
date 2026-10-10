@@ -1,0 +1,4 @@
+[
+  {"machine_id": "compressor-01", "name": "Compressor #01", "model": "Atlas Copco GA 22", "location": "Plant Room A"},
+  {"machine_id": "compressor-02", "name": "Compressor #02", "model": "Atlas Copco GA 22", "location": "Plant Room A"}
+]
