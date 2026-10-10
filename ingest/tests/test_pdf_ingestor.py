@@ -46,7 +46,12 @@ def _make_pdf(pages: list[str]) -> bytes:
 
     Returns
     -------
-    Raw PDF bytes that pypdf can open and extract text from.
+    Raw PDF bytes that both pypdf and PyMuPDF can open and extract text from.
+
+    Implementation note: text is split into short lines (≤ 60 chars) and each
+    line is placed with a separate Tj instruction so that PyMuPDF's text
+    extractor can recover the full content even for long strings.  A leading
+    newline is inserted between lines so pypdf's extractor rejoins them.
     """
     # We build the PDF by hand using pypdf's writer so we don't need
     # an additional library (reportlab, fpdf2, etc.).
@@ -57,6 +62,8 @@ def _make_pdf(pages: list[str]) -> bytes:
         NameObject,
     )
 
+    _LINE_WIDTH = 60  # chars per line — short enough for Helvetica 12pt on A4
+
     writer = PdfWriter()
 
     for text in pages:
@@ -64,11 +71,20 @@ def _make_pdf(pages: list[str]) -> bytes:
         page = writer.add_blank_page(width=595, height=842)
 
         if text:
-            # Build a minimal PDF content stream: BT ... ET block.
-            # We encode every character as its ASCII byte value, which
-            # pypdf's text extractor can read back directly.
-            safe_text = text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-            content = f"BT /F1 12 Tf 50 800 Td ({safe_text}) Tj ET\n".encode()
+            # Split the text into ≤_LINE_WIDTH character segments.
+            segments = [text[i:i + _LINE_WIDTH] for i in range(0, len(text), _LINE_WIDTH)]
+
+            def _esc(s: str) -> str:
+                return s.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+            # Build a content stream with one Tj per segment, advancing one
+            # line (leading = 14pt) between each.  Using T* (move to next line)
+            # keeps lines within the page's printable area.
+            lines = [f"BT /F1 12 Tf 14 TL 50 800 Td ({_esc(segments[0])}) Tj"]
+            for seg in segments[1:]:
+                lines.append(f"T* ({_esc(seg)}) Tj")
+            lines.append("ET")
+            content = "\n".join(lines).encode()
 
             # Attach the content stream to the page.
             stream = DecodedStreamObject()

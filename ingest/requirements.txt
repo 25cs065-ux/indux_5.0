@@ -2,8 +2,19 @@
 #
 # Python dependencies for the ingest module.
 #
-# Install with:
-#   python -m pip install -r ingest/requirements.txt
+# Install all at once:
+#   py -m pip install -r ingest/requirements.txt
 
-pypdf>=4.0.0        # Pure-Python PDF text extraction (no C extensions needed)
-pytest>=8.0.0       # Test runner
+# --- Core ingestion --------------------------------------------------------
+pypdf>=4.0.0              # Fallback PDF text extractor (pure-Python, no C build)
+pymupdf>=1.24.0           # Primary PDF extractor — bounding-box positions, fast
+
+# --- Embedding -------------------------------------------------------------
+sentence-transformers>=2.2.0   # Local embedding model (no API key needed)
+                               # Pulls in torch, transformers, numpy automatically
+
+# --- Database (Supabase) ---------------------------------------------------
+supabase>=2.0.0           # Supabase Python client (upsert chunks + embeddings)
+
+# --- Development / testing -------------------------------------------------
+pytest>=8.0.0             # Test runner
