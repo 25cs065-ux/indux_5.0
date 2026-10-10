@@ -137,6 +137,14 @@ def save_chunks(
     # --- Connect -----------------------------------------------------------
     client = _get_client(url, key)
 
+    # Safe diagnostic: log the REST endpoint that will be used (no credentials).
+    import urllib.parse as _urlparse
+    _parsed = _urlparse.urlparse(url)
+    logger.info(
+        "Supabase target: %s://%s/rest/v1/%s",
+        _parsed.scheme, _parsed.netloc, table,
+    )
+
     # --- Upsert in batches -------------------------------------------------
     total_upserted = 0
 
@@ -163,8 +171,18 @@ def save_chunks(
                 .execute()
             )
         except Exception as exc:  # noqa: BLE001
+            msg = str(exc)
+            hint = ""
+            if "PGRST205" in msg or "schema cache" in msg:
+                hint = (
+                    "\n\nThe table does not exist yet.  Run the SQL in "
+                    "ingest/schema.sql in your Supabase project's SQL Editor:\n"
+                    "  Supabase Dashboard → SQL Editor → New query → paste "
+                    "ingest/schema.sql → Run"
+                )
             raise StorageError(
-                f"Database upsert failed (rows {batch_start}–{batch_start + len(rows)}): {exc}\n"
+                f"Database upsert failed (rows {batch_start}–{batch_start + len(rows)}): {exc}"
+                f"{hint}\n"
                 "Check that SUPABASE_URL and SUPABASE_KEY are correct and the "
                 f"'{table}' table exists with the required schema."
             ) from exc
