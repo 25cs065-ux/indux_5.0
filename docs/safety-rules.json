@@ -1,0 +1,14 @@
+[
+  {"id": "S1", "danger": "Opening panels or covers while the machine is running",
+   "keywords": ["open panel", "remove cover", "open door", "inside"],
+   "do_first": ["Press emergency stop", "Switch off and isolate power", "Wait for the unit to depressurize"]},
+  {"id": "S2", "danger": "Working on pressurized parts or loosening fittings",
+   "keywords": ["loosen", "disconnect", "hose", "valve", "drain"],
+   "do_first": ["Stop the compressor", "Release all pressure", "Confirm pressure gauge reads zero"]},
+  {"id": "S3", "danger": "Electrical work or tripping/burning smell",
+   "keywords": ["burning smell", "sparks", "trip", "wiring", "motor"],
+   "do_first": ["Isolate power and lock out", "Do not touch cables", "Call the electrician"]},
+  {"id": "S4", "danger": "Hot surfaces or hot oil",
+   "keywords": ["hot", "overheat", "oil change", "drain oil"],
+   "do_first": ["Stop and let it cool", "Wear heat-resistant gloves and eye protection"]}
+]
