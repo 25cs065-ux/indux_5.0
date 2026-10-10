@@ -4,40 +4,30 @@
 #
 # Responsibility:
 #   1. Accept chunks + embeddings produced by pdf_ingestor and embedder.
-#   2. Upsert rows into the `document_chunks` Supabase table.
+#   2. Upsert rows into the `manual_chunks` Supabase table.
 #   3. Report success/failure clearly; surface database errors as StorageError.
 #
-# Environment variables required (see README.md):
+# Environment variables required:
 #   SUPABASE_URL   : Your project's REST endpoint, e.g. https://xxx.supabase.co
 #   SUPABASE_KEY   : Service-role key (NOT the anon key — needs INSERT access)
 #
-# Supabase table schema required:
-#
-#   CREATE TABLE document_chunks (
-#     chunk_id      TEXT PRIMARY KEY,
-#     doc_id        TEXT NOT NULL,
-#     page_number   INTEGER NOT NULL,
-#     chunk_index   INTEGER NOT NULL,
-#     chunk_type    TEXT NOT NULL DEFAULT 'text',
-#     text          TEXT NOT NULL,
-#     embedding     VECTOR(384),   -- matches all-MiniLM-L6-v2 output dim
-#     bbox_x0       REAL,
-#     bbox_y0       REAL,
-#     bbox_x1       REAL,
-#     bbox_y1       REAL,
-#     ingested_at   TIMESTAMPTZ DEFAULT now()
-#   );
-#
-#   -- Enable pgvector extension first:
-#   CREATE EXTENSION IF NOT EXISTS vector;
+# Table: public.manual_chunks  (see ingest/schema.sql for full DDL)
+#   Columns written by this module:
+#     id            TEXT PRIMARY KEY  — "{doc_id}_{chunk_index:05d}"
+#     content       TEXT              — chunk text (brain.py reads this)
+#     manual_title  TEXT              — doc_id passed to ingest_pdf()
+#     page_number   INTEGER           — 1-based page number
+#     section       TEXT              — chunk_type ("text" / "troubleshooting_row" / "safety")
+#     chunk_index   INTEGER           — 0-based position within the document
+#     embedding     VECTOR(3072)      — gemini-embedding-001 output
+#     bbox_x0/y0/x1/y1  REAL         — bounding box (null when PyMuPDF unavailable)
+#     ingested_at   TIMESTAMPTZ       — set by DB DEFAULT now()
 #
 # Design decisions:
-#   - upsert (on_conflict="chunk_id") is used so re-running ingestion on the
-#     same document is idempotent — existing rows are updated, not duplicated.
-#   - Rows are upserted in configurable batches (default 100) to avoid hitting
-#     Supabase's request size limits on large documents.
-#   - The storage layer is intentionally thin; it does not embed or chunk —
-#     those concerns live in embedder.py and pdf_ingestor.py respectively.
+#   - Column names match what ai/brain.py reads: content, manual_title,
+#     page_number, section, id.  Both modules must agree on these names.
+#   - upsert on_conflict="id" makes re-ingestion idempotent.
+#   - Rows are upserted in configurable batches (default 100).
 
 from __future__ import annotations
 
@@ -47,8 +37,10 @@ from typing import List, Optional
 
 from .pdf_ingestor import Chunk, BoundingBox
 from dotenv import load_dotenv
+from pathlib import Path
 
-load_dotenv()
+# Load from ingest/.env regardless of the working directory.
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +48,7 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-TABLE_NAME = "document_chunks"
+TABLE_NAME = "manual_chunks"
 DEFAULT_BATCH_SIZE = 100          # rows per upsert call
 
 
@@ -95,7 +87,7 @@ def save_chunks(
     supabase_url  : Override for the SUPABASE_URL env var.
     supabase_key  : Override for the SUPABASE_KEY env var.
     batch_size    : Rows per upsert call.
-    table         : Target table name (default: "document_chunks").
+    table         : Target table name (default: "manual_chunks").
 
     Returns
     -------
@@ -167,7 +159,7 @@ def save_chunks(
         try:
             response = (
                 client.table(table)
-                .upsert(rows, on_conflict="chunk_id")
+                .upsert(rows, on_conflict="id")
                 .execute()
             )
         except Exception as exc:  # noqa: BLE001
@@ -223,18 +215,27 @@ def _get_client(url: str, key: str) -> object:
 
 
 def _chunk_to_row(chunk: Chunk, embedding: List[float]) -> dict:
-    """Convert a Chunk + embedding to a flat dict for Supabase upsert."""
+    """
+    Convert a Chunk + embedding to a flat dict for the manual_chunks upsert.
+
+    Column names match what ai/brain.py reads:
+      id           ← chunk.chunk_id  ("{doc_id}_{chunk_index:05d}")
+      content      ← chunk.text
+      manual_title ← chunk.doc_id
+      page_number  ← chunk.page_number
+      section      ← chunk.chunk_type  ("text" / "troubleshooting_row" / "safety")
+    """
     bbox: Optional[BoundingBox] = chunk.bbox
     return {
-        "chunk_id":    chunk.chunk_id,
-        "doc_id":      chunk.doc_id,
-        "page_number": chunk.page_number,
-        "chunk_index": chunk.chunk_index,
-        "chunk_type":  chunk.chunk_type,
-        "text":        chunk.text,
-        "embedding":   embedding,
-        "bbox_x0":     bbox.x0 if bbox else None,
-        "bbox_y0":     bbox.y0 if bbox else None,
-        "bbox_x1":     bbox.x1 if bbox else None,
-        "bbox_y1":     bbox.y1 if bbox else None,
+        "id":           chunk.chunk_id,
+        "content":      chunk.text,
+        "manual_title": chunk.doc_id,
+        "page_number":  chunk.page_number,
+        "section":      chunk.chunk_type,
+        "chunk_index":  chunk.chunk_index,
+        "embedding":    embedding,
+        "bbox_x0":      bbox.x0 if bbox else None,
+        "bbox_y0":      bbox.y0 if bbox else None,
+        "bbox_x1":      bbox.x1 if bbox else None,
+        "bbox_y1":      bbox.y1 if bbox else None,
     }

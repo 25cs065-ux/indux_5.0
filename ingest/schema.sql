@@ -1,33 +1,47 @@
 -- ingest/schema.sql
 --
--- Supabase schema for Indux 5.0 ingestion pipeline.
+-- Supabase schema for Indux 5.0  --  updated to match ai/brain.py
 --
--- Run this ONCE in your Supabase project's SQL Editor before running ingestion.
--- Dashboard → SQL Editor → New query → paste → Run
+-- Run this in your Supabase project SQL Editor
+--   Dashboard -> SQL Editor -> New query -> paste -> Run
+-- All statements use IF NOT EXISTS / OR REPLACE so they are safe to re-run.
 --
--- Table: public.document_chunks
---   Stores text chunks extracted from PDF manuals, together with their
---   384-dimensional sentence-transformer embeddings and positional metadata.
+-- Tables / objects created:
+--   public.manual_chunks        -- ingested PDF chunks + embeddings
+--   public.match_manual_chunks  -- RPC called by ai/brain.py for vector search
 --
--- Design:
---   - chunk_id is the natural primary key: "{doc_id}_{chunk_index:05d}"
---   - upsert on chunk_id makes re-ingestion idempotent (safe to re-run)
---   - pgvector VECTOR(384) matches all-MiniLM-L6-v2 output dimension
---   - ivfflat index enables fast approximate cosine-similarity search
---     (add more lists if the table grows beyond ~1 M rows)
+-- Required environment variables (ingest/.env):
+--   SUPABASE_URL    : https://<project-ref>.supabase.co
+--   SUPABASE_KEY    : service-role key (needs INSERT / UPDATE access)
+--   GEMINI_API_KEY  : Google AI Studio key (used by embedder and brain)
 
--- Step 1: enable the pgvector extension (only needed once per Supabase project)
+-- ---------------------------------------------------------------------------
+-- Step 1: pgvector extension (once per Supabase project)
+-- ---------------------------------------------------------------------------
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Step 2: create the table
-CREATE TABLE IF NOT EXISTS public.document_chunks (
-    chunk_id      TEXT        PRIMARY KEY,
-    doc_id        TEXT        NOT NULL,
+-- ---------------------------------------------------------------------------
+-- Step 2: main table
+--
+-- Column contract (must match both ingest/storage.py and ai/brain.py):
+--   id           : "{doc_id}_{chunk_index:05d}" — natural primary key
+--   content      : chunk text           — brain reads c.get("content")
+--   manual_title : doc_id from ingest   — brain reads c.get("manual_title")
+--   page_number  : 1-based page         — brain reads c.get("page_number")
+--   section      : chunk_type value     — brain reads c.get("section")
+--   chunk_index  : 0-based position within the document
+--   embedding    : VECTOR(3072)         — gemini-embedding-001 dimension
+--   bbox_*       : bounding-box coords from PyMuPDF (NULL when unavailable)
+--   ingested_at  : set by DB DEFAULT now()
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.manual_chunks (
+    id            TEXT        PRIMARY KEY,
+    content       TEXT        NOT NULL,
+    manual_title  TEXT        NOT NULL,
     page_number   INTEGER     NOT NULL,
+    section       TEXT        NOT NULL DEFAULT 'text',
     chunk_index   INTEGER     NOT NULL,
-    chunk_type    TEXT        NOT NULL DEFAULT 'text',
-    text          TEXT        NOT NULL,
-    embedding     VECTOR(384),          -- all-MiniLM-L6-v2: 384 dimensions
+    embedding     VECTOR(3072),
     bbox_x0       REAL,
     bbox_y0       REAL,
     bbox_x1       REAL,
@@ -35,27 +49,70 @@ CREATE TABLE IF NOT EXISTS public.document_chunks (
     ingested_at   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Step 3: index for fast cosine-similarity search (pgvector ivfflat)
---   lists=100 is appropriate for up to ~1 M rows.
---   Build AFTER the first bulk load for best performance; it can be created
---   before the first insert without errors — it just starts with an empty index.
-CREATE INDEX IF NOT EXISTS chunks_embedding_cosine_idx
-    ON public.document_chunks
+-- ---------------------------------------------------------------------------
+-- Step 3: indexes
+-- ---------------------------------------------------------------------------
+
+-- Approximate nearest-neighbour (cosine) index.
+-- lists=100 is suitable for up to ~1 M rows; increase for larger collections.
+-- For best performance, build AFTER the first bulk load.
+CREATE INDEX IF NOT EXISTS manual_chunks_embedding_idx
+    ON public.manual_chunks
     USING ivfflat (embedding vector_cosine_ops)
     WITH (lists = 100);
 
--- Step 4: index on doc_id for fast "fetch all chunks for a document" queries
-CREATE INDEX IF NOT EXISTS chunks_doc_id_idx
-    ON public.document_chunks (doc_id);
+-- Lookup by manual_title for document-scoped queries.
+CREATE INDEX IF NOT EXISTS manual_chunks_manual_title_idx
+    ON public.manual_chunks (manual_title);
 
--- -------------------------------------------------------------------------
--- Verification query (run after ingestion to confirm rows landed):
+-- ---------------------------------------------------------------------------
+-- Step 4: match_manual_chunks RPC
 --
---   SELECT doc_id, count(*) AS chunks
---   FROM public.document_chunks
---   GROUP BY doc_id
+-- Called by ai/brain.py:
+--   supabase.rpc("match_manual_chunks", {
+--       "query_embedding": <3072-float list>,
+--       "match_count": <int>
+--   }).execute()
+--
+-- Returns: id, content, manual_title, page_number, section, distance
+-- brain.py filters results where distance <= 0.65 (cosine distance).
+-- ---------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.match_manual_chunks(
+    query_embedding VECTOR(3072),
+    match_count     INT DEFAULT 5
+)
+RETURNS TABLE (
+    id            TEXT,
+    content       TEXT,
+    manual_title  TEXT,
+    page_number   INTEGER,
+    section       TEXT,
+    distance      FLOAT
+)
+LANGUAGE SQL STABLE
+AS $$
+    SELECT
+        id,
+        content,
+        manual_title,
+        page_number,
+        section,
+        (embedding <=> query_embedding)::FLOAT AS distance
+    FROM public.manual_chunks
+    WHERE embedding IS NOT NULL
+    ORDER BY embedding <=> query_embedding
+    LIMIT match_count;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Verification queries (run after ingestion):
+--
+--   SELECT manual_title, count(*) AS chunks
+--   FROM public.manual_chunks
+--   GROUP BY manual_title
 --   ORDER BY chunks DESC;
 --
--- Expected for Compressed-Air-Manual-9th-edition.pdf:
---   ~473 rows for whatever SHA-256 hash or --doc-id you passed.
--- -------------------------------------------------------------------------
+--   SELECT * FROM match_manual_chunks(
+--       array_fill(0.0::float, ARRAY[3072])::vector, 3
+--   );
+-- ---------------------------------------------------------------------------

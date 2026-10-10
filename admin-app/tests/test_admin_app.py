@@ -196,10 +196,16 @@ class TestUpload:
 
     def test_job_starts_in_queued_or_running_state(self, client):
         pdf = _make_pdf(["Content."])
-        self._post_pdf(client, pdf)
-        with _jobs_lock:
-            job = list(_jobs.values())[0]
-        assert job.status in (JobStatus.QUEUED, JobStatus.RUNNING)
+        # Patch embed_chunks so the background thread does not fail immediately
+        # due to a missing GEMINI_API_KEY in the test environment, which would
+        # cause the job to reach FAILED before the assertion can check it.
+        from unittest.mock import patch, MagicMock
+        mock_embed = MagicMock(return_value=[[0.1] * 3072])
+        with patch("ingest.embedder.embed_chunks", mock_embed):
+            self._post_pdf(client, pdf)
+            with _jobs_lock:
+                job = list(_jobs.values())[0]
+        assert job.status in (JobStatus.QUEUED, JobStatus.RUNNING, JobStatus.DONE)
 
 
 # ---------------------------------------------------------------------------

@@ -4,30 +4,34 @@
 #
 # Responsibility:
 #   1. Accept a list of Chunk objects.
-#   2. Extract their text, generate embeddings in batches using
-#      sentence-transformers (local, free, no API key required).
-#   3. Return embeddings as a list of float lists aligned 1:1 with the chunks.
+#   2. Extract their text, call the Google Gemini embedding API in batches,
+#      and return 3072-dimensional float vectors aligned 1:1 with the chunks.
 #
 # Design decisions:
-#   - sentence-transformers with the "all-MiniLM-L6-v2" model (384-dim) is
-#     used by default because it is small (~22 MB), fast on CPU, and gives
-#     good semantic retrieval quality for technical documents.
-#   - The model name is configurable via the EMBED_MODEL environment variable
-#     so teams can switch to a larger model without touching this file.
-#   - Batch size is configurable; default 32 is a safe choice for low-RAM
-#     environments (free-tier cloud runners, laptops).
-#   - The module never writes embeddings to disk — the caller (storage.py or
-#     run_ingest.py) decides where to persist them.
-#   - If sentence-transformers is unavailable, a clear ImportError is raised
-#     with installation instructions.
+#   - Uses google-genai SDK with model "gemini-embedding-001" (3072 dims) to
+#     match the brain module in ai/brain.py exactly.  Both ingest and retrieval
+#     must use the same model so similarity search returns meaningful scores.
+#   - GEMINI_API_KEY env var is required (loaded from ingest/.env via dotenv).
+#   - Chunks are sent one at a time because the Gemini embedding API does not
+#     support batch inputs in a single call the way sentence-transformers does.
+#     batch_size is accepted for API compatibility but is not used.
+#   - The module never writes embeddings to disk; the caller decides persistence.
+#   - If google-genai is unavailable, a clear EmbeddingError is raised with
+#     installation instructions.
 
 from __future__ import annotations
 
 import os
 import logging
+from pathlib import Path
 from typing import List
 
+from dotenv import load_dotenv
+
 from .pdf_ingestor import Chunk
+
+# Load from ingest/.env regardless of the working directory.
+load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
 logger = logging.getLogger(__name__)
 
@@ -35,18 +39,11 @@ logger = logging.getLogger(__name__)
 # Configuration
 # ---------------------------------------------------------------------------
 
-# Default model: small, fast, good semantic quality.
-DEFAULT_MODEL = "all-MiniLM-L6-v2"
+# Model name must match ai/brain.py exactly.
+GEMINI_EMBED_MODEL = "gemini-embedding-001"
 
-# Batch size for encode() calls.  Increase on machines with more RAM / VRAM.
-DEFAULT_BATCH_SIZE = 32
-
-# ---------------------------------------------------------------------------
-# Module-level model cache — loaded once per process
-# ---------------------------------------------------------------------------
-
-_model_cache: dict[str, object] = {}
-
+# Output dimension of gemini-embedding-001.
+GEMINI_EMBED_DIM = 3072
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -63,90 +60,96 @@ def embed_chunks(
     chunks: List[Chunk],
     *,
     model_name: str | None = None,
-    batch_size: int = DEFAULT_BATCH_SIZE,
+    batch_size: int = 32,           # kept for API compatibility; not used
 ) -> List[List[float]]:
     """
-    Generate embeddings for every chunk in *chunks*.
+    Generate 3072-dimensional Gemini embeddings for every chunk.
 
     Parameters
     ----------
     chunks     : List of Chunk objects whose ``.text`` fields will be embedded.
-    model_name : sentence-transformers model name or path.
-                 Defaults to the EMBED_MODEL env var, then "all-MiniLM-L6-v2".
-    batch_size : Number of texts per encode() call.
+    model_name : Gemini embedding model name.
+                 Defaults to the GEMINI_EMBED_MODEL env var, then
+                 "gemini-embedding-001".
+    batch_size : Accepted for API compatibility but ignored — the Gemini
+                 embedding API is called once per text.
 
     Returns
     -------
-    A list of float lists, one per chunk, in the same order as *chunks*.
-    Each inner list has length equal to the model's embedding dimension.
+    A list of float lists, one per chunk, each with length 3072.
 
     Raises
     ------
-    EmbeddingError : If sentence-transformers is not installed or encoding fails.
+    EmbeddingError : If google-genai is not installed, GEMINI_API_KEY is
+                     missing, or the API call fails.
     ValueError     : If *chunks* is empty.
     """
     if not chunks:
         raise ValueError("embed_chunks requires at least one chunk; got empty list.")
 
-    resolved_model = model_name or os.getenv("EMBED_MODEL", DEFAULT_MODEL)
-
-    model = _load_model(resolved_model)
-
-    texts = [chunk.text for chunk in chunks]
-
-    logger.info(
-        "Embedding %d chunks with model '%s' (batch_size=%d) …",
-        len(texts),
-        resolved_model,
-        batch_size,
+    resolved_model = (
+        model_name
+        or os.getenv("GEMINI_EMBED_MODEL", GEMINI_EMBED_MODEL)
     )
 
-    try:
-        vectors = model.encode(  # type: ignore[union-attr]
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-        )
-    except Exception as exc:  # noqa: BLE001
+    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
         raise EmbeddingError(
-            f"Embedding generation failed: {exc}\n"
-            "Check that sentence-transformers and torch are installed and the model"
-            f" '{resolved_model}' is available."
-        ) from exc
+            "GEMINI_API_KEY is not set.  "
+            "Add it to ingest/.env or export it before running ingestion:\n"
+            "  $env:GEMINI_API_KEY = 'AIza...'"
+        )
 
-    # Convert numpy arrays to plain Python float lists for JSON-serialisability.
-    return [v.tolist() for v in vectors]
+    client = _get_genai_client(api_key)
+
+    logger.info(
+        "Embedding %d chunks with Gemini model '%s' …",
+        len(chunks),
+        resolved_model,
+    )
+
+    embeddings: List[List[float]] = []
+    for i, chunk in enumerate(chunks):
+        try:
+            response = client.models.embed_content(
+                model=resolved_model,
+                contents=chunk.text,
+            )
+            values = response.embeddings[0].values
+            embeddings.append(list(values))
+        except Exception as exc:  # noqa: BLE001
+            raise EmbeddingError(
+                f"Gemini embedding failed on chunk {i} "
+                f"(chunk_id={chunk.chunk_id!r}): {exc}"
+            ) from exc
+
+        if (i + 1) % 50 == 0:
+            logger.info("  … embedded %d / %d chunks", i + 1, len(chunks))
+
+    logger.info(
+        "Embedding complete. %d vectors, dimension %d.",
+        len(embeddings),
+        len(embeddings[0]) if embeddings else 0,
+    )
+    return embeddings
 
 
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
 
-def _load_model(model_name: str) -> object:
+def _get_genai_client(api_key: str) -> object:
     """
-    Load (or return a cached) SentenceTransformer model.
+    Create and return a google.genai.Client.
 
-    Raises EmbeddingError if sentence-transformers is not installed.
+    Raises EmbeddingError if google-genai is not installed.
     """
-    if model_name in _model_cache:
-        return _model_cache[model_name]
-
     try:
-        from sentence_transformers import SentenceTransformer  # type: ignore
+        from google import genai  # type: ignore
     except ImportError as exc:
         raise EmbeddingError(
-            "sentence-transformers is required for embedding generation.\n"
-            "Install it with:  py -m pip install sentence-transformers"
+            "google-genai is required for Gemini embedding.\n"
+            "Install it with:  py -m pip install google-genai"
         ) from exc
 
-    logger.info("Loading embedding model '%s' …", model_name)
-    try:
-        model = SentenceTransformer(model_name)
-    except Exception as exc:  # noqa: BLE001
-        raise EmbeddingError(
-            f"Failed to load embedding model '{model_name}': {exc}"
-        ) from exc
-
-    _model_cache[model_name] = model
-    return model
+    return genai.Client(api_key=api_key)
