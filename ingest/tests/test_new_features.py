@@ -392,7 +392,7 @@ class TestEmbedChunks:
         chunks = self._make_chunks(5)
         mock_client = self._mock_genai_client()
         with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            embeddings = embed_chunks(chunks)
+            embeddings = embed_chunks(chunks, checkpoint=False, delay_s=0.0)
         assert len(embeddings) == 5
 
     def test_embedding_dimension_is_3072(self, monkeypatch):
@@ -401,7 +401,7 @@ class TestEmbedChunks:
         chunks = self._make_chunks(3)
         mock_client = self._mock_genai_client(dim=3072)
         with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            embeddings = embed_chunks(chunks)
+            embeddings = embed_chunks(chunks, checkpoint=False, delay_s=0.0)
         for emb in embeddings:
             assert len(emb) == 3072, (
                 f"Expected 3072-dim (gemini-embedding-001), got {len(emb)}"
@@ -412,7 +412,7 @@ class TestEmbedChunks:
         chunks = self._make_chunks(2)
         mock_client = self._mock_genai_client()
         with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            embeddings = embed_chunks(chunks)
+            embeddings = embed_chunks(chunks, checkpoint=False, delay_s=0.0)
         for emb in embeddings:
             assert isinstance(emb, list)
             assert all(isinstance(v, float) for v in emb)
@@ -426,7 +426,7 @@ class TestEmbedChunks:
         monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         chunks = self._make_chunks(1)
         with pytest.raises(EmbeddingError, match="GEMINI_API_KEY"):
-            embed_chunks(chunks)
+            embed_chunks(chunks, checkpoint=False)
 
     def test_embed_content_called_once_per_chunk(self, monkeypatch):
         """The Gemini API is called once for every chunk (no batch shortcut)."""
@@ -434,7 +434,7 @@ class TestEmbedChunks:
         chunks = self._make_chunks(4)
         mock_client = self._mock_genai_client()
         with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            embed_chunks(chunks)
+            embed_chunks(chunks, checkpoint=False, delay_s=0.0)
         assert mock_client.models.embed_content.call_count == 4
 
     def test_api_error_raises_embedding_error(self, monkeypatch):
@@ -444,7 +444,7 @@ class TestEmbedChunks:
         mock_client.models.embed_content.side_effect = RuntimeError("quota exceeded")
         with patch("ingest.embedder._get_genai_client", return_value=mock_client):
             with pytest.raises(EmbeddingError, match="(?i)gemini"):
-                embed_chunks(chunks)
+                embed_chunks(chunks, checkpoint=False, delay_s=0.0, max_retries=0)
 
     def test_missing_google_genai_raises_embedding_error(self, monkeypatch):
         """If google-genai is not installed, EmbeddingError is raised."""
@@ -452,7 +452,7 @@ class TestEmbedChunks:
         chunks = self._make_chunks(1)
         with patch.dict("sys.modules", {"google": None, "google.genai": None}):
             with pytest.raises(EmbeddingError, match="(?i)google.genai"):
-                embed_chunks(chunks)
+                embed_chunks(chunks, checkpoint=False)
 
     def test_custom_model_name_via_env(self, monkeypatch):
         """GEMINI_EMBED_MODEL env var overrides the default model name."""
@@ -461,7 +461,7 @@ class TestEmbedChunks:
         chunks = self._make_chunks(2)
         mock_client = self._mock_genai_client(dim=3072)
         with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            embed_chunks(chunks)
+            embed_chunks(chunks, checkpoint=False, delay_s=0.0)
         # Confirm the custom model name was passed to the SDK
         call_kwargs = mock_client.models.embed_content.call_args_list[0][1]
         assert call_kwargs.get("model") == "gemini-embedding-002"
@@ -693,8 +693,8 @@ class TestRunIngestCLI:
     def test_embedding_error_returns_exit_code_2(self, tmp_path, monkeypatch):
         monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
         pdf_file = self._write_pdf(tmp_path)
-        with patch("ingest.embedder._get_genai_client",
-                   side_effect=EmbeddingError("Mock failure")):
+        # Disable checkpoint I/O so the test does not touch the filesystem.
+        with patch("ingest.embedder._Checkpoint.load", side_effect=EmbeddingError("Mock failure")):
             from ingest.run_ingest import main
             rc = main([str(pdf_file)])
         assert rc == 2
@@ -718,10 +718,14 @@ class TestRunIngestCLI:
         mock_resp = MagicMock(); mock_resp.embeddings = [mock_emb]
         mock_client = MagicMock()
         mock_client.models.embed_content.return_value = mock_resp
-        with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            with patch("ingest.storage.save_chunks", side_effect=StorageError("DB down")):
-                from ingest.run_ingest import main
-                rc = main([str(pdf_file)])  # no --dry-run
+        # Disable checkpoint I/O so the test does not touch the filesystem.
+        with patch("ingest.embedder._get_genai_client", return_value=mock_client), \
+             patch("ingest.embedder._Checkpoint.load") as mock_ckpt_load, \
+             patch("ingest.storage.save_chunks", side_effect=StorageError("DB down")):
+            mock_ckpt_load.return_value = MagicMock(get=lambda cid: None, put=lambda *a: None,
+                                                     flush=lambda: None, delete=lambda: None)
+            from ingest.run_ingest import main
+            rc = main([str(pdf_file)])  # no --dry-run
         assert rc == 3
 
     def test_doc_id_flag_is_passed_through(self, tmp_path, monkeypatch):

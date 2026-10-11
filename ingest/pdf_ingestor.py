@@ -23,9 +23,11 @@
 #     contains "troubleshoot", "fault", "error code", "problem", "cause", or
 #     "remedy" are parsed row-by-row so the problem + cause + remedy context is
 #     never split across different chunks.
-#   - Scanned image-only PDFs will yield empty text; the result reports this
-#     clearly rather than silently returning empty chunks.
-#   - No OCR is included (out of scope for this task).
+#   - Scanned image-only PDFs are now handled via an OCR fallback: when every
+#     page yields no text from fitz/pypdf, the module automatically calls
+#     ocr_extractor.ocr_pdf_pages() (Tesseract at 300 DPI) and re-runs the
+#     chunking pipeline on the OCR output.  The fallback can be disabled with
+#     ocr_fallback=False.  When OCR is used, extractor_used is "tesseract".
 #   - No database writes are done here; see storage.py.
 
 from __future__ import annotations
@@ -51,6 +53,23 @@ except ImportError:
         _HAVE_FITZ = True
     except ImportError:
         _HAVE_FITZ = False
+
+# ---------------------------------------------------------------------------
+# Optional OCR import — imported at module level so tests can patch it.
+# The actual call is guarded by the ocr_fallback flag inside ingest_pdf().
+# ---------------------------------------------------------------------------
+
+try:
+    from ingest.ocr_extractor import ocr_pdf_pages, OcrError as _OcrError
+    _HAVE_OCR_EXTRACTOR = True
+except ImportError:
+    try:
+        from .ocr_extractor import ocr_pdf_pages, OcrError as _OcrError  # type: ignore[no-redef]
+        _HAVE_OCR_EXTRACTOR = True
+    except ImportError:
+        _HAVE_OCR_EXTRACTOR = False
+        ocr_pdf_pages = None    # type: ignore[assignment]
+        _OcrError = Exception   # type: ignore[misc, assignment]
 
 # ---------------------------------------------------------------------------
 # Required pypdf import (fallback extractor + PDF writer used in tests)
@@ -179,6 +198,7 @@ def ingest_pdf(
     doc_id: Optional[str] = None,
     chunk_size: int = CHUNK_SIZE,
     chunk_overlap: int = CHUNK_OVERLAP,
+    ocr_fallback: bool = True,
 ) -> IngestResult:
     """
     Ingest a PDF file and return structured chunks with metadata.
@@ -190,6 +210,11 @@ def ingest_pdf(
                    If omitted, a SHA-256 hash of the file content is used.
     chunk_size   : Maximum number of characters per chunk.
     chunk_overlap: Characters of overlap between consecutive chunks.
+    ocr_fallback : When True (default), automatically runs Tesseract OCR if
+                   the primary extractor produces no text on any page (i.e.
+                   the PDF appears to be scanned / image-only).
+                   Set to False to suppress OCR and preserve the original
+                   scanned_warning=True behaviour.
 
     Returns
     -------
@@ -197,9 +222,8 @@ def ingest_pdf(
 
     Raises
     ------
-    IngestError  : For missing files, wrong format, unreadable PDFs, empty
-                   files, or image-only (scanned) PDFs that produced no text
-                   on *any* page.
+    IngestError  : For missing files, wrong format, unreadable PDFs, or empty
+                   files.
     ValueError   : If chunk_size or chunk_overlap are invalid.
     """
     # --- Validate parameters -----------------------------------------------
@@ -246,6 +270,39 @@ def ingest_pdf(
     # page_data: list of (page_number, text, bbox_or_None)
     empty_pages = [pn for pn, txt, _bbox in page_data if not txt.strip()]
     page_texts  = [(pn, txt, bbox) for pn, txt, bbox in page_data if txt.strip()]
+
+    # --- OCR fallback: run Tesseract when no text was found -----------------
+    # ocr_pdf_pages and _OcrError are imported at module level so tests can
+    # patch ingest.pdf_ingestor.ocr_pdf_pages cleanly.
+    if len(page_texts) == 0 and ocr_fallback and ocr_pdf_pages is not None:
+        import logging as _logging
+        _log = _logging.getLogger(__name__)
+        _log.info(
+            "No text extracted from '%s' — attempting OCR fallback with Tesseract.",
+            pdf_path,
+        )
+        try:
+            ocr_page_data, _ocr_total = ocr_pdf_pages(raw_bytes)
+            ocr_empty   = [pn for pn, txt, _ in ocr_page_data if not txt.strip()]
+            ocr_texts   = [(pn, txt, bb) for pn, txt, bb in ocr_page_data if txt.strip()]
+            if ocr_texts:
+                # Replace page_data with OCR results and update counters.
+                page_data     = ocr_page_data
+                empty_pages   = ocr_empty
+                page_texts    = ocr_texts
+                extractor_used = "tesseract"
+                _log.info(
+                    "OCR fallback produced text on %d/%d pages.",
+                    len(ocr_texts),
+                    total_pages,
+                )
+            else:
+                _log.warning(
+                    "OCR fallback ran but produced no text on any page "
+                    "(PDF may be low-quality or non-English)."
+                )
+        except _OcrError as exc:
+            _log.warning("OCR fallback failed: %s", exc)
 
     scanned_warning = len(page_texts) == 0
 
@@ -406,28 +463,52 @@ def _extract_with_pypdf(
 # Internal: troubleshooting table helpers
 # ---------------------------------------------------------------------------
 
-# Pattern that matches a common troubleshooting row header like:
+# Pattern that matches a labelled troubleshooting row like:
 #   "Problem:", "Cause:", "Remedy:", "Symptom:", "Action:", "Solution:"
-# followed by content.  We look for at least two of these in a block.
+# These appear when each row carries its own label (labelled-row format).
 _TS_LABEL = re.compile(
     r"(?i)^(problem|symptom|cause|remedy|action|solution|fault|error)\s*[:\-–—]",
     re.MULTILINE,
 )
 
-# Separator between rows (e.g. blank line or a line of dashes)
+# Separator between row blocks (blank line or ruler).
 _TS_ROW_SEP = re.compile(r"\n{2,}|\n[-=_]{3,}\n")
+
+# Pattern that detects a columnar table header line: the three column heading
+# words appearing as standalone lines within 20 lines of each other.
+# Atlas Copco instruction books use: "Condition", "Fault", "Remedy"
+_TS_COLUMN_HEADER = re.compile(
+    r"(?im)^\s*(condition)\s*$.*?^\s*(fault)\s*$.*?^\s*(remedy)\s*$",
+    re.DOTALL,
+)
 
 
 def _extract_troubleshooting_rows(text: str) -> list[str]:
     """
     If *text* looks like a troubleshooting table, split it into individual
-    rows where each row keeps the problem + cause + remedy together.
+    rows where each row keeps the condition + fault + remedy together.
+
+    Handles two formats:
+
+    1. Labelled-row format — each row has its own inline labels:
+       "Problem: ...", "Cause: ...", "Remedy: ..."
+       (the original heuristic)
+
+    2. Columnar header format — an OCR'd three-column table where the column
+       headers "Condition / Fault / Remedy" appear once at the top and the
+       data lines follow in blank-separated groups of three cells.
+       This is the format used in Atlas Copco instruction book chapter 14.
 
     Returns an empty list if the text does not look like a troubleshooting
     table (the caller should fall through to normal chunking).
     """
-    # Require a troubleshooting keyword in the heading area (first 200 chars
-    # or the whole text if shorter).
+    # --- Try columnar-header format first ------------------------------------
+    columnar_rows = _extract_columnar_ts_rows(text)
+    if columnar_rows:
+        return columnar_rows
+
+    # --- Fall back to labelled-row format ------------------------------------
+    # Require a troubleshooting keyword in the heading area (first 200 chars).
     if not _TROUBLESHOOT_KEYWORDS.search(text[:200] or text):
         return []
 
@@ -449,11 +530,110 @@ def _extract_troubleshooting_rows(text: str) -> list[str]:
     return rows if len(rows) >= 2 else []
 
 
+def _extract_columnar_ts_rows(text: str) -> list[str]:
+    """
+    Detect and split a Condition/Fault/Remedy columnar table produced by OCR.
+
+    Atlas Copco instruction books lay out troubleshooting as a 3-column table:
+    the column headers "Condition", "Fault", "Remedy" appear as standalone
+    lines.  OCR reads each column's cells as separate blank-separated groups
+    in document order: all condition cells, then all fault cells, then all
+    remedy cells — OR it interleaves them depending on reading order.
+
+    Because Tesseract reads in left-to-right, top-to-bottom order for a
+    3-column table it typically reads line by line across all columns,
+    so the output is: condition_line, blank, fault_line, blank, remedy_line,
+    blank, condition_line2, blank, fault_line2, ...
+
+    Strategy:
+      1. Detect the "Condition / Fault / Remedy" header.
+      2. Extract the content that comes after the header.
+      3. Split into blank-separated groups.
+      4. Remove any groups that are single words matching header/footer noise
+         ("Condition", "Fault", "Remedy", page numbers, document IDs).
+      5. Treat every group of 3 consecutive data blocks as one logical row
+         (condition + fault + remedy).  If the grouping doesn't divide evenly,
+         fall back to pairing every two consecutive blocks.
+      6. Wrap each logical row as "Condition: ...\nFault: ...\nRemedy: ..."
+         so that downstream processing can identify them.
+
+    Returns an empty list if the header is not found or fewer than 2 rows
+    can be assembled.
+    """
+    if not _TS_COLUMN_HEADER.search(text):
+        return []
+
+    # Locate where the header ends and data starts.
+    m = _TS_COLUMN_HEADER.search(text)
+    data_text = text[m.end():].strip()
+
+    # Split on blank lines.
+    raw_blocks = _TS_ROW_SEP.split(data_text)
+
+    # Remove noise: header repetitions, page numbers, document IDs like
+    # "2920 7193 21", the Atlas Copco brand string, and empty blocks.
+    # Also strip stand-alone 1-3 digit numbers (page numbers in OCR output).
+    _NOISE = re.compile(
+        r"^(?:condition|fault|remedy|\d{1,3}|[0-9 ]{4,}|atlas\s+copco|instruction\s+book"
+        r"|sltlas\s+copco|has\s+copco|irstuction\s+book|inston\s+book"
+        r"|faults\s+and\s+remedies.*|for\s+all\s+references.*"
+        r"|compressor\s+element\s+out\s+of\s+order\s+consult.*)$",
+        re.IGNORECASE,
+    )
+
+    data_blocks: list[str] = []
+    for blk in raw_blocks:
+        blk = blk.strip()
+        if not blk:
+            continue
+        if _NOISE.match(blk):
+            continue
+        data_blocks.append(blk)
+
+    if len(data_blocks) < 3:
+        return []
+
+    # Group into logical rows of 3 (condition, fault, remedy).
+    # If count isn't divisible by 3, use groups of 2.
+    rows: list[str] = []
+    if len(data_blocks) % 3 == 0:
+        step = 3
+        for i in range(0, len(data_blocks), step):
+            condition = data_blocks[i]
+            fault     = data_blocks[i + 1] if i + 1 < len(data_blocks) else ""
+            remedy    = data_blocks[i + 2] if i + 2 < len(data_blocks) else ""
+            row = f"Condition: {condition}\nFault: {fault}\nRemedy: {remedy}"
+            rows.append(row)
+    else:
+        # Fallback: pair each condition with its fault/remedy as one block
+        # (every 2 consecutive blocks become one row).
+        step = 2
+        for i in range(0, len(data_blocks) - 1, step):
+            fault_remedy = data_blocks[i + 1] if i + 1 < len(data_blocks) else ""
+            row = f"Condition: {data_blocks[i]}\nFault/Remedy: {fault_remedy}"
+            rows.append(row)
+
+    return rows if len(rows) >= 2 else []
+
+
 def _remove_troubleshooting_rows(text: str) -> str:
     """
     Remove troubleshooting row blocks from *text*, leaving only the
     surrounding prose (headings, notes, etc.).
+
+    For the columnar format, removes everything from the Condition/Fault/Remedy
+    header onwards (the entire table section).  For the labelled-row format,
+    removes individual labelled blocks.
     """
+    # Columnar format: strip everything from the header to end of page.
+    if _TS_COLUMN_HEADER.search(text):
+        m = _TS_COLUMN_HEADER.search(text)
+        # Keep the preamble (safety warning, section heading etc.) before
+        # the column headers, and discard the table itself.
+        pre = text[:m.start()].strip()
+        return pre if pre else ""
+
+    # Labelled-row format.
     raw_blocks = _TS_ROW_SEP.split(text)
     non_ts: list[str] = []
     for block in raw_blocks:
