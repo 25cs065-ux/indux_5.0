@@ -80,7 +80,11 @@ export interface TroubleshootingAnswer {
   status: AnswerStatus
   problemType: string
   summary: string
-  isDangerous: boolean
+  /**
+   * true/false only when the backend sent a real boolean. null means the
+   * safety state is unknown and must be treated as uncertain, never as safe.
+   */
+  isDangerous: boolean | null
   safetyChecklist: string[]
   historyNote: string
   steps: TroubleshootingStep[]

@@ -69,10 +69,22 @@ Response handling rules:
 - An answer whose `status` is not exactly `OK` or `NOT_FOUND`, or a body with no `answer` object, is rejected as `malformed`. Steps are never shown from a response the app cannot interpret.
 - Missing or null lists become `[]` and missing strings become `""`. Steps without an instruction and sources without a manual are dropped. Every repair is listed in `AskResult.issues`.
 - `NOT_FOUND` always means `escalate = true` with no steps, even if the backend says otherwise.
-- `is_dangerous` and `is_demo` are true only when the backend sends the boolean `true`.
+- `is_demo` is true only when the backend sends the boolean `true`.
+- `is_dangerous` becomes `null` (unknown) when it is missing or not a boolean. The UI treats unknown as **uncertain**, never as safe, and withholds repair steps (see `src/lib/safety.ts`).
+- 502 and 504 (gateway or dev proxy cannot reach the backend) are reported as `unavailable`.
 - Only 422 and 503 messages from the backend are shown to workers. Other error statuses show a generic message so internal details are not exposed.
 
 Mock responses exist only in `src/api/__tests__/`. The app itself has no hard-coded answers.
+
+## Safety states (`src/lib/safety.ts`)
+
+| State | When | Steps |
+|---|---|---|
+| `flagged` | `is_dangerous: true`, or a non-empty `safety_checklist` | Require acknowledgement (Stage 4) |
+| `uncertain` | `is_dangerous` missing or not a boolean | Withheld |
+| `not_flagged` | `is_dangerous: false` and no checklist | Allowed, labelled "not a safety clearance" |
+
+The UI never states that equipment is safe.
 
 ## HTTPS mobile testing plan
 
@@ -108,7 +120,7 @@ internet.
 
 1. ✅ Scaffold: Vite + React + TS, env config, mobile-first styles, start screen
 2. ✅ API layer: typed client for `/ask` and `/health`, error handling (503, 422, network, timeout), response validation, tests
-3. Machine ID entry plus the typed-question flow
+3. ✅ Worker interface: machine selection or entry, editable question, Diagnose via `/ask`, loading, error and retry states, safety state notice (no steps shown yet)
 4. Answer view: safety checklist (acknowledgement required before steps on
    dangerous answers; summary, escalation and sources always visible), numbered
    steps, sources, NOT_FOUND / escalate

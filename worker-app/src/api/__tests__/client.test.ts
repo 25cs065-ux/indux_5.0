@@ -139,11 +139,13 @@ describe('askQuestion responses', () => {
     expect(err.message).not.toContain('SUPABASE')
   })
 
-  it('maps a proxy 502 (backend down in dev) to an http error', async () => {
-    fetchMock.mockResolvedValue(new Response('', { status: 502 }))
+  it.each([502, 504])('maps a gateway %i (backend down behind proxy) to unavailable', async (status) => {
+    fetchMock.mockResolvedValue(new Response('', { status }))
     const err = await catchApiError(askQuestion('x', 'compressor-01'))
-    expect(err.kind).toBe('http')
-    expect(err.status).toBe(502)
+    expect(err.kind).toBe('unavailable')
+    expect(err.status).toBe(status)
+    expect(err.retryable).toBe(true)
+    expect(err.message).toMatch(/not responding/i)
   })
 
   it('maps fetch failures to network errors', async () => {

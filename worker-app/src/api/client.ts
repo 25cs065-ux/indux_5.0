@@ -16,6 +16,7 @@ export interface RequestOptions {
 const DEFAULT_MESSAGES = {
   unavailable: 'The assistant is temporarily unavailable. Please try again in a moment.',
   network: 'Cannot reach the Indux server. Check your connection and try again.',
+  gateway: 'The Indux server is not responding. Please try again in a moment.',
   timeout: 'The assistant took too long to respond. Please try again.',
   aborted: 'The request was cancelled.',
   validation: 'The request was not accepted. Please check your question and machine ID.',
@@ -49,6 +50,8 @@ function errorForStatus(status: number, body: unknown): ApiError {
   if (status === 422) return new ApiError('validation', detail ?? DEFAULT_MESSAGES.validation, status)
   // The backend's 503 detail is already written for end users.
   if (status === 503) return new ApiError('unavailable', detail ?? DEFAULT_MESSAGES.unavailable, status)
+  // 502/504 come from a gateway or the dev proxy when the backend is down.
+  if (status === 502 || status === 504) return new ApiError('unavailable', DEFAULT_MESSAGES.gateway, status)
   // Other statuses may carry internal details; show a generic message.
   return new ApiError('http', DEFAULT_MESSAGES.http, status)
 }

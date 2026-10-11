@@ -16,7 +16,8 @@ import type {
 // - Everything else is repaired field by field (missing list -> [], missing
 //   string -> "", invalid items dropped) and each repair is recorded in
 //   `issues` so the UI can flag an incomplete answer.
-// - Safety flags fail safe: NOT_FOUND always escalates.
+// - Safety flags fail safe: NOT_FOUND always escalates, and a missing or
+//   non-boolean is_dangerous becomes null (unknown), never false.
 
 type Json = Record<string, unknown>
 
@@ -43,6 +44,13 @@ function readBoolean(obj: Json, key: string, issues: string[], prefix: string): 
   if (typeof value === 'boolean') return value
   issues.push(`${prefix}${key} is ${value === undefined ? 'missing' : 'not a boolean'}`)
   return false
+}
+
+function readOptionalBoolean(obj: Json, key: string, issues: string[], prefix: string): boolean | null {
+  const value = obj[key]
+  if (typeof value === 'boolean') return value
+  issues.push(`${prefix}${key} is ${value === undefined ? 'missing' : 'not a boolean'}`)
+  return null
 }
 
 function readArray(obj: Json, key: string, issues: string[], prefix: string): unknown[] {
@@ -115,7 +123,7 @@ function parseAnswer(raw: Json, issues: string[]): TroubleshootingAnswer {
     status: status as AnswerStatus,
     problemType: problemType ?? 'other',
     summary: readString(raw, 'summary', issues, p),
-    isDangerous: readBoolean(raw, 'is_dangerous', issues, p),
+    isDangerous: readOptionalBoolean(raw, 'is_dangerous', issues, p),
     safetyChecklist: parseChecklist(readArray(raw, 'safety_checklist', issues, p), issues),
     historyNote: readString(raw, 'history_note', issues, p),
     steps: parseSteps(readArray(raw, 'steps', issues, p), issues),

@@ -3,7 +3,13 @@ import { getHealth, isApiError } from '../api/index.ts'
 
 type State = 'checking' | 'online' | 'offline'
 
-/** Small indicator showing whether GET /health succeeds. */
+const LABELS: Record<State, string> = {
+  checking: 'Checking',
+  online: 'Online',
+  offline: 'Unreachable',
+}
+
+/** Compact server indicator driven by GET /health. */
 export default function BackendStatus() {
   const [state, setState] = useState<State>('checking')
 
@@ -18,16 +24,11 @@ export default function BackendStatus() {
     return () => controller.abort()
   }, [])
 
-  const label = {
-    checking: 'Checking server…',
-    online: 'Server online',
-    offline: 'Server unreachable',
-  }[state]
-
   return (
-    <p className={`backend-status backend-status--${state}`} role="status">
-      <span className="backend-status-dot" aria-hidden="true" />
-      {label}
+    <p className={`server server--${state}`} role="status" aria-label={`Server ${LABELS[state]}`}>
+      <span className="server-key">SRV</span>
+      <span className="server-dot" aria-hidden="true" />
+      <span className="server-value">{LABELS[state]}</span>
     </p>
   )
 }

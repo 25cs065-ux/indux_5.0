@@ -104,7 +104,7 @@ describe('parseAskResponse: incomplete responses are repaired and flagged', () =
       status: 'OK',
       problemType: 'other',
       summary: '',
-      isDangerous: false,
+      isDangerous: null,
       safetyChecklist: [],
       historyNote: '',
       steps: [],
@@ -160,9 +160,9 @@ describe('parseAskResponse: incomplete responses are repaired and flagged', () =
     expect(parseAskResponse(envelope(answer), req).answer.safetyChecklist).toEqual(['Isolate power'])
   })
 
-  it('does not treat a non-boolean is_dangerous as dangerous=true silently', () => {
-    const { answer, issues } = parseAskResponse(envelope({ ...okAnswer(), is_dangerous: 'yes' }), req)
-    expect(answer.isDangerous).toBe(false)
+  it.each([['yes'], ['false'], [0], [null]])('treats is_dangerous=%j as unknown (null), not safe', (value) => {
+    const { answer, issues } = parseAskResponse(envelope({ ...okAnswer(), is_dangerous: value }), req)
+    expect(answer.isDangerous).toBeNull()
     expect(issues).toContain('answer.is_dangerous is not a boolean')
   })
 
