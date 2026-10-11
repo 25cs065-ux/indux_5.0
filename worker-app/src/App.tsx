@@ -1,3 +1,4 @@
+import BackendStatus from './components/BackendStatus.tsx'
 import { API_BASE_URL, IS_DEV } from './config.ts'
 
 const FEATURES = [
@@ -52,6 +53,7 @@ export default function App() {
       </main>
 
       <footer className="app-footer">
+        <BackendStatus />
         <p>Always follow site safety rules. If unsure, stop and call your lead engineer.</p>
         {IS_DEV && (
           <p className="dev-note">

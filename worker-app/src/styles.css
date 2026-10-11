@@ -248,3 +248,27 @@ code {
     animation: none !important;
   }
 }
+
+/* Backend status */
+
+.backend-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: 600;
+}
+
+.backend-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--color-muted);
+}
+
+.backend-status--online .backend-status-dot {
+  background: var(--color-success);
+}
+
+.backend-status--offline .backend-status-dot {
+  background: var(--color-danger);
+}

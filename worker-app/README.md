@@ -30,6 +30,8 @@ Open http://localhost:5173.
 | `npm run dev:host` | Same, but reachable from other devices on the LAN (HTTP only — see below) |
 | `npm run build` | Type-check and build to `dist/` |
 | `npm run typecheck` | Type-check only |
+| `npm test` | Run unit tests once (Vitest) |
+| `npm run test:watch` | Run tests in watch mode |
 | `npm run preview` | Serve the built `dist/` locally |
 
 ## Configuration
@@ -52,6 +54,25 @@ in the backend.
 Machine IDs are sent to the backend exactly as entered (or as given in the QR
 link `?machine=`). They are not normalized until the backend team confirms
 the canonical format (`compressor-01` vs `compressor_01`).
+
+## API layer (`src/api/`)
+
+| File | Purpose |
+|---|---|
+| `types.ts` | Wire types matching `backend/main.py` and `ai/schemas.py`, plus the normalized types the UI uses |
+| `client.ts` | `askQuestion(question, machineId)` → `POST /ask`; `getHealth()` → `GET /health`; timeouts (45s / 5s) and cancellation |
+| `parse.ts` | Validates the `/ask` envelope and nested `answer`, repairs incomplete fields and records them in `issues` |
+| `errors.ts` | `ApiError` with `kind`: `validation` (422), `unavailable` (503), `http`, `network`, `timeout`, `aborted`, `malformed` |
+
+Response handling rules:
+
+- An answer whose `status` is not exactly `OK` or `NOT_FOUND`, or a body with no `answer` object, is rejected as `malformed`. Steps are never shown from a response the app cannot interpret.
+- Missing or null lists become `[]` and missing strings become `""`. Steps without an instruction and sources without a manual are dropped. Every repair is listed in `AskResult.issues`.
+- `NOT_FOUND` always means `escalate = true` with no steps, even if the backend says otherwise.
+- `is_dangerous` and `is_demo` are true only when the backend sends the boolean `true`.
+- Only 422 and 503 messages from the backend are shown to workers. Other error statuses show a generic message so internal details are not exposed.
+
+Mock responses exist only in `src/api/__tests__/`. The app itself has no hard-coded answers.
 
 ## HTTPS mobile testing plan
 
@@ -86,7 +107,7 @@ internet.
 ## Roadmap
 
 1. ✅ Scaffold: Vite + React + TS, env config, mobile-first styles, start screen
-2. API layer: typed client for `/ask`, error handling (503, 422, network, timeout)
+2. ✅ API layer: typed client for `/ask` and `/health`, error handling (503, 422, network, timeout), response validation, tests
 3. Machine ID entry plus the typed-question flow
 4. Answer view: safety checklist (acknowledgement required before steps on
    dangerous answers; summary, escalation and sources always visible), numbered
