@@ -76,6 +76,26 @@ the canonical format (`compressor-01` vs `compressor_01`).
 - No machine status, health, readings or activity are shown, because none exist
   in the repository.
 
+### Diagnose page workflow
+
+1. Machine bar shows the machine selected on Equipment (with a Change link).
+2. Type the issue, or press **Record issue** and speak; recognised text lands
+   in the field for editing. Nothing is sent until **Diagnose** is pressed.
+3. While loading: progress line and **Cancel**. Double clicks never send twice.
+4. Errors show their cause with **Retry** (same request, sent once).
+5. The answer follows the safety rules above; **Read aloud** / **Stop speaking**
+   follow the same gating.
+6. **New question** (beside the Diagnosis heading once there is something to
+   clear) stops recording and read-aloud, cancels any request in flight,
+   clears the question and diagnosis (so acknowledgements reset), keeps the
+   machine and focuses the issue field.
+
+If `GET /health` fails, or an `/ask` request cannot reach the server (network
+error, or 502/504 from a gateway or the dev proxy), the header shows
+**Unreachable** and the Diagnose page shows a **Server unreachable** notice
+with **Check again**. Typing and recording still work. A successful answer
+clears the notice.
+
 ## API layer (`src/api/`)
 
 | File | Purpose |
@@ -284,6 +304,7 @@ internet.
 5. ✅ Speech-to-text (Web Speech API): Record / Stop recording, listening indicator, interim text, editable transcript, no auto-submit, error handling; sent via `/ask` only when Diagnose is pressed
 6. ✅ Read Aloud / Stop Speaking (speechSynthesis), following the on-screen safety gating
 7. ✅ (Stage B) Three-page navigation and Equipment page
+   ✅ (Stage C) Diagnose workflow: New question, Retry, server-unreachable notice
 8. Read-only repair history page
 9. Polish, accessibility, deployment
 

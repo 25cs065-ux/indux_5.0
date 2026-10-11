@@ -54,10 +54,17 @@ export function useDiagnosis() {
     inFlight.current?.abort()
   }, [])
 
+  /** Clears the diagnosis (cancelling any request in flight) and returns to idle. */
+  const reset = useCallback(() => {
+    inFlight.current?.abort()
+    inFlight.current = null
+    setState({ phase: 'idle' })
+  }, [])
+
   const retry = useCallback(() => {
     if (state.phase === 'error') return submit(state.request)
     return Promise.resolve(false)
   }, [state, submit])
 
-  return { state, submit, cancel, retry, isLoading: state.phase === 'loading' }
+  return { state, submit, cancel, retry, reset, isLoading: state.phase === 'loading' }
 }

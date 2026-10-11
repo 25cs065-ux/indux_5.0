@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import AppNav from './components/AppNav.tsx'
 import Header from './components/Header.tsx'
 import { QUESTION_MAX_LENGTH } from './components/IssueForm.tsx'
+import { useBackendHealth } from './hooks/useBackendHealth.ts'
 import { useDiagnosis } from './hooks/useDiagnosis.ts'
 import { useSpeechRecognition } from './hooks/useSpeechRecognition.ts'
 import { initialMachineId, machineFromSearch, saveLastMachine } from './lib/machineParam.ts'
@@ -34,7 +35,18 @@ export default function App() {
   const [question, setQuestion] = useState('')
   const [machineError, setMachineError] = useState<string | null>(null)
   const [questionError, setQuestionError] = useState<string | null>(null)
-  const { state, submit, cancel, retry, isLoading } = useDiagnosis()
+  const { state, submit, cancel, retry, reset, isLoading } = useDiagnosis()
+  const health = useBackendHealth()
+  const { markOnline, markOffline } = health
+
+  // Real /ask outcomes are fresher evidence than the last health check.
+  useEffect(() => {
+    if (state.phase === 'success') markOnline()
+    if (state.phase === 'error') {
+      const { kind, status } = state.error
+      if (kind === 'network' || (kind === 'unavailable' && (status === 502 || status === 504))) markOffline()
+    }
+  }, [state, markOnline, markOffline])
 
   // Text in the field when recording started. Each recognition update
   // rebuilds the question from this, so duplicate events cannot repeat words.
@@ -89,6 +101,17 @@ export default function App() {
     speech.start()
   }
 
+  /** Clears the question and diagnosis; keeps the machine. */
+  const handleNewQuestion = () => {
+    speech.abort()
+    cancelAllSpeech()
+    reset()
+    dictationBase.current = ''
+    setQuestion('')
+    setQuestionError(null)
+    setMachineError(null)
+  }
+
   const handleSubmit = () => {
     if (isLoading) return
     // Never keep listening into a diagnosis; text already recognised stays.
@@ -111,7 +134,7 @@ export default function App() {
       <a className="skip-link" href="#main">
         Skip to content
       </a>
-      <Header route={route} />
+      <Header route={route} health={health.status} />
 
       <main id="main" className="page-main" tabIndex={-1}>
         {route === 'equipment' && (
@@ -147,6 +170,9 @@ export default function App() {
             diagnosis={state}
             onRetry={() => void retry()}
             onCancel={cancel}
+            onNewQuestion={handleNewQuestion}
+            health={health.status}
+            onRecheckHealth={health.recheck}
             autoFocus={autoFocus}
           />
         )}

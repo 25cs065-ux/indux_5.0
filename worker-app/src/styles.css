@@ -1941,3 +1941,60 @@ fieldset {
     min-height: 60dvh;
   }
 }
+
+/* ---------- Diagnose: server notice and New question ---------- */
+
+.server-notice {
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-4);
+  padding: var(--s-4) var(--s-4) var(--s-4) var(--s-5);
+  border-left: 4px solid var(--hazard);
+  background: var(--hazard-tint);
+}
+
+.server-notice-code {
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--hazard);
+  margin-bottom: var(--s-1);
+}
+
+.server-notice-text p:last-child {
+  color: var(--ink-2);
+}
+
+.server-notice .btn {
+  justify-self: start;
+  background: var(--paper-raised);
+}
+
+.section-aside:has(.btn) {
+  font-family: var(--font-sans);
+}
+
+.btn-new {
+  min-height: 44px;
+  padding: 0 var(--s-4);
+  font-size: 0.9375rem;
+}
+
+.btn-new-glyph {
+  font-family: var(--font-mono);
+  font-size: 1.125rem;
+  line-height: 1;
+  color: var(--signal);
+}
+
+@media (min-width: 640px) {
+  .server-notice {
+    grid-template-columns: 1fr auto;
+    align-items: center;
+  }
+
+  .server-notice .btn {
+    justify-self: end;
+  }
+}

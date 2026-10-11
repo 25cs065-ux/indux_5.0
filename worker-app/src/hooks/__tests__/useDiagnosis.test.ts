@@ -124,3 +124,62 @@ describe('useDiagnosis', () => {
     expect(signal?.aborted).toBe(true)
   })
 })
+
+describe('useDiagnosis reset and retry', () => {
+  it('reset() returns to idle from success', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(envelope(okAnswer())))
+    const { result } = renderHook(() => useDiagnosis())
+    await act(async () => void (await result.current.submit(request)))
+    expect(result.current.state.phase).toBe('success')
+    act(() => result.current.reset())
+    expect(result.current.state.phase).toBe('idle')
+  })
+
+  it('reset() cancels a request in flight and ignores its late response', async () => {
+    const release = deferredFetch()
+    const { result } = renderHook(() => useDiagnosis())
+    act(() => void result.current.submit(request))
+    const signal = fetchMock.mock.calls[0]![1]?.signal
+    act(() => result.current.reset())
+    expect(signal?.aborted).toBe(true)
+    expect(result.current.state.phase).toBe('idle')
+    await act(async () => release(jsonResponse(envelope(okAnswer()))))
+    expect(result.current.state.phase).toBe('idle')
+  })
+
+  it('allows a new submit right after reset()', async () => {
+    deferredFetch()
+    const { result } = renderHook(() => useDiagnosis())
+    act(() => void result.current.submit(request))
+    act(() => result.current.reset())
+    fetchMock.mockResolvedValueOnce(jsonResponse(envelope(okAnswer())))
+    await act(async () => void (await result.current.submit(request)))
+    expect(result.current.state.phase).toBe('success')
+  })
+
+  it('retry() called twice at once sends only one request', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ detail: 'down' }, 503))
+    const { result } = renderHook(() => useDiagnosis())
+    await act(async () => void (await result.current.submit(request)))
+    expect(result.current.state.phase).toBe('error')
+
+    const release = deferredFetch()
+    act(() => {
+      void result.current.retry()
+      void result.current.retry()
+    })
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    await act(async () => release(jsonResponse(envelope(okAnswer()))))
+    expect(result.current.state.phase).toBe('success')
+  })
+
+  it('retry() does nothing unless the last request failed', async () => {
+    const { result } = renderHook(() => useDiagnosis())
+    let retried: boolean | undefined
+    await act(async () => {
+      retried = await result.current.retry()
+    })
+    expect(retried).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+})

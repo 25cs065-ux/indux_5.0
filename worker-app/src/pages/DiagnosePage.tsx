@@ -5,6 +5,7 @@ import type { SpeechControls } from '../components/IssueForm.tsx'
 import MachineBar from '../components/MachineBar.tsx'
 import PageHeading from '../components/PageHeading.tsx'
 import Section from '../components/Section.tsx'
+import type { BackendHealth } from '../hooks/useBackendHealth.ts'
 import type { DiagnosisState } from '../hooks/useDiagnosis.ts'
 
 interface Props {
@@ -19,12 +20,16 @@ interface Props {
   diagnosis: DiagnosisState
   onRetry: () => void
   onCancel: () => void
+  onNewQuestion: () => void
+  health: BackendHealth
+  onRecheckHealth: () => void
   autoFocus: boolean
 }
 
 export default function DiagnosePage(props: Props) {
   const { machineId, diagnosis } = props
   const outputRef = useRef<HTMLDivElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   // On narrow screens the diagnosis sits below the form: jump to it when a
   // request starts and when it settles, so the worker sees progress and the
@@ -38,6 +43,17 @@ export default function DiagnosePage(props: Props) {
 
   const resultMachine = diagnosis.phase === 'success' ? diagnosis.result.machineId : null
   const machineChanged = resultMachine !== null && resultMachine !== machineId
+  const canStartOver =
+    diagnosis.phase === 'success' || diagnosis.phase === 'error' || (diagnosis.phase === 'idle' && props.question !== '')
+
+  const handleNewQuestion = () => {
+    props.onNewQuestion()
+    const field = textareaRef.current
+    if (field) {
+      field.focus({ preventScroll: true })
+      field.scrollIntoView({ block: 'center' })
+    }
+  }
 
   return (
     <div className="page-body page-body--diagnose">
@@ -50,6 +66,21 @@ export default function DiagnosePage(props: Props) {
         </p>
       )}
 
+      {props.health === 'offline' && (
+        <div className="server-notice" role="status">
+          <div className="server-notice-text">
+            <p className="server-notice-code mono">Server unreachable</p>
+            <p>
+              The Indux server is not responding, so diagnoses cannot be requested right now. You can still type or
+              record the issue.
+            </p>
+          </div>
+          <button type="button" className="btn btn-ghost" onClick={props.onRecheckHealth}>
+            Check again
+          </button>
+        </div>
+      )}
+
       <div className="layout">
         <div className="layout-input">
           <Section index="A" title="Issue">
@@ -60,12 +91,26 @@ export default function DiagnosePage(props: Props) {
               isLoading={props.isLoading}
               error={props.questionError}
               speech={props.speech}
+              textareaRef={textareaRef}
             />
           </Section>
         </div>
 
         <div className="layout-output" ref={outputRef}>
-          <Section index="B" title="Diagnosis">
+          <Section
+            index="B"
+            title="Diagnosis"
+            aside={
+              canStartOver ? (
+                <button type="button" className="btn btn-secondary btn-new" onClick={handleNewQuestion}>
+                  <span className="btn-new-glyph" aria-hidden="true">
+                    +
+                  </span>
+                  New question
+                </button>
+              ) : undefined
+            }
+          >
             {machineChanged && (
               <p className="machine-mismatch" role="note">
                 This diagnosis is for <span className="mono">{resultMachine}</span>, not the machine now selected.

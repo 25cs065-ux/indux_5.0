@@ -1,5 +1,5 @@
 import { useId } from 'react'
-import type { FormEvent, KeyboardEvent } from 'react'
+import type { FormEvent, KeyboardEvent, Ref } from 'react'
 import type { RecordingStatus } from '../hooks/useSpeechRecognition.ts'
 import type { SpeechSupport } from '../speech/support.ts'
 import { SPEECH_LANG } from '../speech/support.ts'
@@ -22,9 +22,11 @@ interface Props {
   isLoading: boolean
   error?: string | null
   speech: SpeechControls
+  /** Lets the page focus the field, e.g. after New question. */
+  textareaRef?: Ref<HTMLTextAreaElement>
 }
 
-export default function IssueForm({ value, onChange, onSubmit, isLoading, error, speech }: Props) {
+export default function IssueForm({ value, onChange, onSubmit, isLoading, error, speech, textareaRef }: Props) {
   const id = useId()
   const errorId = `${id}-error`
   const voiceNoteId = `${id}-voice`
@@ -56,6 +58,7 @@ export default function IssueForm({ value, onChange, onSubmit, isLoading, error,
           </span>
         </div>
         <textarea
+          ref={textareaRef}
           id={id}
           className={`textarea ${recording ? 'is-recording' : ''}`}
           rows={5}
