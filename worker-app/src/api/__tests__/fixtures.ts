@@ -55,3 +55,68 @@ export function jsonResponse(body: unknown, status = 200): Response {
     headers: { 'Content-Type': 'application/json' },
   })
 }
+
+// ---- Current format (ai/schemas.py + ai/brain.py after the AI integration) ----
+
+export function successAnswer() {
+  return {
+    status: 'SUCCESS',
+    problem_type: 'low_pressure',
+    summary: 'Intake air filter is clogged causing insufficient pressure build-up.',
+    safety_checklist: [] as string[],
+    steps: [
+      {
+        step_number: 1,
+        instruction: 'Inspect intake air filter cartridge for dust accumulation.',
+        check_question: 'Is the filter cartridge clogged with debris?',
+      },
+      {
+        step_number: 2,
+        instruction: 'Clean cartridge with compressed air or replace if saturated.',
+        check_question: 'Is the replacement cartridge seated securely in the housing?',
+      },
+    ],
+    sources: [{ manual_title: 'GA15-26_Instruction_Book', page_number: 8, section: 'Pressure System' }],
+    escalate: false,
+    search_score: 0.312,
+  }
+}
+
+/** brain.py upgrades SUCCESS to SAFETY_ALERT when safety keywords trigger a checklist. */
+export function safetyAlertAnswer() {
+  return {
+    ...successAnswer(),
+    status: 'SAFETY_ALERT',
+    problem_type: 'electrical',
+    summary: 'Motor terminal fault suspected.',
+    safety_checklist: ['Isolate power and lock out', 'Do not touch cables'],
+  }
+}
+
+/** brain.py's no-chunks response. */
+export function currentNotFoundAnswer() {
+  return {
+    status: 'NOT_FOUND',
+    problem_type: 'other',
+    summary: 'This issue or error code was not found in the verified manual.',
+    safety_checklist: [] as string[],
+    steps: [],
+    sources: [],
+    escalate: true,
+    search_score: null,
+  }
+}
+
+/** brain.py's parse-failure response: an internal error inside `summary`. */
+export function parseFailureAnswer() {
+  return {
+    status: 'NOT_FOUND',
+    problem_type: 'other',
+    summary: "Failed to parse AI response: Expecting value: line 1 column 1 (char 0) KeyError: 'steps'",
+    safety_checklist: [] as string[],
+    steps: [],
+    sources: [],
+    escalate: true,
+    search_score: 0.41,
+  }
+}

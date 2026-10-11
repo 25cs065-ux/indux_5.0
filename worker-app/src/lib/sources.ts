@@ -1,10 +1,10 @@
 import type { SourceReference } from '../api/types.ts'
 
-/** Removes exact duplicate references while keeping backend order. */
+/** Removes exact duplicate references (manual, page and section) while keeping backend order. */
 export function uniqueSources(sources: SourceReference[]): SourceReference[] {
   const seen = new Set<string>()
   return sources.filter((s) => {
-    const key = `${s.manual}\u0000${s.page ?? ''}`
+    const key = `${s.manual}\u0000${s.page ?? ''}\u0000${s.section ?? ''}`
     if (seen.has(key)) return false
     seen.add(key)
     return true

@@ -21,8 +21,12 @@ function result(answer: Partial<TroubleshootingAnswer> = {}, extra: Partial<AskR
         { stepNo: 1, instruction: 'Check the oil level', checkQuestion: 'Is it between the marks?' },
         { stepNo: 2, instruction: 'Inspect the cooler fins', checkQuestion: '' },
       ],
-      sources: [{ manual: 'GA15-26_Instruction_Book.pdf', page: 42 }],
+      sources: [{ manual: 'GA15-26_Instruction_Book.pdf', page: 42, section: null }],
       escalate: false,
+      rawStatus: answer.status ?? 'OK',
+      format: 'legacy',
+      searchScore: null,
+      internalError: false,
       ...answer,
     },
   }

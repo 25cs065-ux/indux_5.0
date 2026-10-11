@@ -43,7 +43,6 @@ export interface ReadAloudOptions {
 
 export function buildReadAloudScript(result: AskResult, { stepsVisible }: ReadAloudOptions): string[] {
   const { answer } = result
-  const found = answer.status === 'OK'
   const safety = safetyStateOf(answer)
   const gate = stepsGateOf(answer)
   const out: string[] = []
@@ -51,15 +50,33 @@ export function buildReadAloudScript(result: AskResult, { stepsVisible }: ReadAl
     const s = sentence(text)
     if (s) out.push(s)
   }
+  const sayChecklist = () => answer.safetyChecklist.forEach((item, i) => say(`Check ${i + 1}. ${item}`))
 
   if (result.isDemo) say('This is a demo response, not a live diagnosis')
+
+  // A backend failure is not a diagnosis: say so, nothing else.
+  if (answer.internalError) {
+    say('The assistant could not complete this diagnosis. This is a system problem, not a finding about the machine')
+    say('Press Diagnose to try again. If it happens again, contact the lead engineer')
+    say(SPOKEN_DISCLAIMER)
+    return out.flatMap((s) => chunkForSpeech(s))
+  }
+
   if (result.issues.length > 0) say('Note: part of this response was missing or invalid. Review it carefully')
 
   // Safety is always spoken before any guidance.
-  if (safety === 'flagged') {
+  if (safety === 'alert') {
+    say('Safety alert. Escalation is required. Do not start work. Contact the lead engineer')
+    if (answer.safetyChecklist.length > 0) {
+      say('Required safety actions')
+      sayChecklist()
+    } else {
+      say('No safety checklist was provided. Follow the applicable site safety procedures')
+    }
+  } else if (safety === 'flagged') {
     if (answer.safetyChecklist.length > 0) {
       say('Safety warning. A hazard was flagged. Complete these safety checks before any work')
-      answer.safetyChecklist.forEach((item, i) => say(`Check ${i + 1}. ${item}`))
+      sayChecklist()
     } else {
       say(
         'Safety warning. A hazard was flagged, but no safety checklist was provided. Do not start work. ' +
@@ -70,34 +87,38 @@ export function buildReadAloudScript(result: AskResult, { stepsVisible }: ReadAl
     say('Safety status could not be determined. Treat the machine as hazardous and contact the lead engineer')
     if (answer.safetyChecklist.length > 0) {
       say('Safety checks returned with this response')
-      answer.safetyChecklist.forEach((item, i) => say(`Check ${i + 1}. ${item}`))
+      sayChecklist()
     }
   } else {
     say(`No hazard was flagged by the assistant. ${SPOKEN_NOT_A_CLEARANCE}`)
   }
 
-  if (!found) {
+  if (answer.status === 'NOT_FOUND') {
     say('No verified manual guidance was found for this issue')
     say('Escalation is required. Contact the lead engineer. Do not attempt a repair based on this response')
   } else {
-    if (answer.escalate) say('Escalation recommended. Involve the lead engineer for this issue')
+    if (answer.escalate && answer.status === 'OK') say('Escalation recommended. Involve the lead engineer for this issue')
     say(answer.summary ? `Summary. ${answer.summary}` : 'The assistant returned no summary')
 
     const count = answer.steps.length
     const plural = count === 1 ? 'step is' : 'steps are'
-    if (gate === 'none') {
-      say('No troubleshooting steps were returned')
-    } else if (gate === 'withheld') {
-      say(`${count} troubleshooting ${plural} withheld because the safety status is unknown`)
-    } else if (gate === 'withheld_no_checklist') {
-      say(`${count} troubleshooting ${plural} withheld because a hazard was flagged without a safety checklist`)
-    } else if (gate === 'requires_ack' && !stepsVisible) {
-      say(`${count} troubleshooting ${plural} locked until every safety check is confirmed on screen`)
-    } else {
+    // Steps are read only when explicitly allowed; every other gate is described.
+    const readSteps = gate === 'allowed' || (gate === 'requires_ack' && stepsVisible)
+    if (readSteps) {
       for (const step of answer.steps) {
         say(`Step ${step.stepNo}. ${step.instruction}`)
         if (step.checkQuestion) say(`Check: ${step.checkQuestion}`)
       }
+    } else if (gate === 'none') {
+      say('No troubleshooting steps were returned')
+    } else if (gate === 'withheld_safety_alert') {
+      say(`${count} troubleshooting ${plural} withheld because of the safety alert`)
+    } else if (gate === 'withheld') {
+      say(`${count} troubleshooting ${plural} withheld because the safety status is unknown`)
+    } else if (gate === 'withheld_no_checklist') {
+      say(`${count} troubleshooting ${plural} withheld because a hazard was flagged without a safety checklist`)
+    } else {
+      say(`${count} troubleshooting ${plural} locked until every safety check is confirmed on screen`)
     }
 
     if (answer.sources.length > 0) say('Manual references are listed on screen')

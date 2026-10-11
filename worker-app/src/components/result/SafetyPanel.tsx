@@ -20,6 +20,29 @@ export const ACK_MEANING =
 export default function SafetyPanel({ state, checklist, ackItems, checked, onToggle }: Props) {
   const baseId = useId()
 
+  if (state === 'alert') {
+    return (
+      <section className="safety safety--flagged" aria-labelledby={`${baseId}-title`}>
+        <p className="safety-code">Safety · Alert</p>
+        <h3 id={`${baseId}-title`} className="safety-title">
+          Safety alert. Escalation required.
+        </h3>
+        {checklist.length > 0 ? (
+          <>
+            <p className="safety-sub">Required safety actions</p>
+            <SafetyList items={checklist} />
+          </>
+        ) : (
+          <p className="safety-body">
+            The assistant raised a safety alert without a checklist. Do not start work. Contact a qualified
+            supervisor and follow the applicable site safety procedures.
+          </p>
+        )}
+        <p className="safety-foot">{SAFETY_DISCLAIMER}</p>
+      </section>
+    )
+  }
+
   if (state === 'flagged') {
     const done = checked.filter(Boolean).length
     const total = ackItems.length

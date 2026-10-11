@@ -33,8 +33,12 @@ function result(answer: Partial<TroubleshootingAnswer> = {}): AskResult {
       safetyChecklist: [],
       historyNote: '',
       steps: [{ stepNo: 1, instruction: 'Check the oil level', checkQuestion: '' }],
-      sources: [{ manual: 'GA15-26_Instruction_Book', page: 42 }],
+      sources: [{ manual: 'GA15-26_Instruction_Book', page: 42, section: null }],
       escalate: false,
+      rawStatus: answer.status ?? 'OK',
+      format: 'legacy',
+      searchScore: null,
+      internalError: false,
       ...answer,
     },
   }

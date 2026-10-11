@@ -78,7 +78,7 @@ describe('askQuestion responses', () => {
     const result = await askQuestion('Compressor is overheating', 'compressor-01')
     expect(result.answer.status).toBe('OK')
     expect(result.answer.steps[0]?.instruction).toBe('Check oil.')
-    expect(result.answer.sources[0]).toEqual({ manual: 'GA15-26_Instruction_Book', page: 12 })
+    expect(result.answer.sources[0]).toEqual({ manual: 'GA15-26_Instruction_Book', page: 12, section: null })
   })
 
   it('returns NOT_FOUND answers as results, not errors', async () => {
@@ -234,5 +234,36 @@ describe('getHealth', () => {
     const pending = catchApiError(getHealth())
     await vi.advanceTimersByTimeAsync(5_000)
     expect((await pending).kind).toBe('timeout')
+  })
+})
+
+describe('askQuestion with the current backend format', () => {
+  it('parses SUCCESS end to end', async () => {
+    const { successAnswer } = await import('./fixtures.ts')
+    fetchMock.mockResolvedValue(jsonResponse(envelope(successAnswer())))
+    const result = await askQuestion('Pressure is low', 'compressor-01')
+    expect(result.answer.status).toBe('OK')
+    expect(result.answer.rawStatus).toBe('SUCCESS')
+    expect(result.answer.steps).toHaveLength(2)
+    expect(result.answer.sources[0]).toEqual({
+      manual: 'GA15-26_Instruction_Book',
+      page: 8,
+      section: 'Pressure System',
+    })
+  })
+
+  it('parses SAFETY_ALERT end to end', async () => {
+    const { safetyAlertAnswer } = await import('./fixtures.ts')
+    fetchMock.mockResolvedValue(jsonResponse(envelope(safetyAlertAnswer())))
+    const result = await askQuestion('Motor terminal sparking', 'compressor-01')
+    expect(result.answer.status).toBe('SAFETY_ALERT')
+  })
+
+  it('returns a parse failure as an internal error result, without the raw text', async () => {
+    const { parseFailureAnswer } = await import('./fixtures.ts')
+    fetchMock.mockResolvedValue(jsonResponse(envelope(parseFailureAnswer())))
+    const result = await askQuestion('x', 'compressor-01')
+    expect(result.answer.internalError).toBe(true)
+    expect(JSON.stringify(result)).not.toMatch(/Failed to parse|KeyError/)
   })
 })

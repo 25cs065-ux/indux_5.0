@@ -24,13 +24,17 @@ describe('parseAskResponse: valid responses', () => {
     expect(result.isDemo).toBe(false)
     expect(result.answer).toEqual({
       status: 'OK',
+      rawStatus: 'OK',
+      format: 'legacy',
+      searchScore: null,
+      internalError: false,
       problemType: 'overheating',
       summary: 'Check the cooler and oil level.',
       isDangerous: false,
       safetyChecklist: [],
       historyNote: '',
       steps: [{ stepNo: 1, instruction: 'Check oil.', checkQuestion: 'Is oil level normal?' }],
-      sources: [{ manual: 'GA15-26_Instruction_Book', page: 12 }],
+      sources: [{ manual: 'GA15-26_Instruction_Book', page: 12, section: null }],
       escalate: false,
     })
   })
@@ -92,7 +96,8 @@ describe('parseAskResponse: malformed responses are rejected', () => {
     ['answer is a string', envelope('OK')],
     ['answer is null', envelope(null)],
     ['unknown answer status', envelope({ ...okAnswer(), status: 'MAYBE' })],
-    ['lowercase answer status', envelope({ ...okAnswer(), status: 'ok' })],
+    ['status with a typo', envelope({ ...okAnswer(), status: 'SUCESS' })],
+    ['status as a number', envelope({ ...okAnswer(), status: 200 })],
     ['missing answer status', envelope({ ...okAnswer(), status: undefined })],
   ])('%s', (_label, body) => expectMalformed(body))
 })
@@ -102,6 +107,10 @@ describe('parseAskResponse: incomplete responses are repaired and flagged', () =
     const { answer, issues } = parseAskResponse(envelope({ status: 'OK' }), req)
     expect(answer).toEqual({
       status: 'OK',
+      rawStatus: 'OK',
+      format: 'legacy',
+      searchScore: null,
+      internalError: false,
       problemType: 'other',
       summary: '',
       isDangerous: null,
@@ -150,8 +159,8 @@ describe('parseAskResponse: incomplete responses are repaired and flagged', () =
       sources: [{ manual: 'Manual A', page: 'twelve' }, { page: 4 }, { manual: 'Manual B', page: '7' }],
     }
     expect(parseAskResponse(envelope(answer), req).answer.sources).toEqual([
-      { manual: 'Manual A', page: null },
-      { manual: 'Manual B', page: 7 },
+      { manual: 'Manual A', page: null, section: null },
+      { manual: 'Manual B', page: 7, section: null },
     ])
   })
 

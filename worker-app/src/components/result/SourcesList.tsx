@@ -15,8 +15,11 @@ export default function SourcesList({ sources, hasSteps }: Props) {
       {unique.length > 0 ? (
         <ul className="sources-list">
           {unique.map((s, i) => (
-            <li key={`${s.manual}-${s.page ?? 'x'}-${i}`} className="source">
-              <span className="source-manual mono">{s.manual}</span>
+            <li key={`${s.manual}-${s.page ?? 'x'}-${s.section ?? ''}-${i}`} className="source">
+              <span className="source-manual">
+                <span className="mono">{s.manual}</span>
+                {s.section && <span className="source-section">Section: {s.section}</span>}
+              </span>
               <span className={`source-page mono ${s.page === null ? 'is-missing' : ''}`}>{pageLabel(s.page)}</span>
             </li>
           ))}

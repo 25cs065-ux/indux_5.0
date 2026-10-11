@@ -19,7 +19,7 @@ interface Props {
  */
 export default function ResultView({ result }: Props) {
   const { answer } = result
-  const found = answer.status === 'OK'
+  const kind = resultKindOf(answer)
   const safety = safetyStateOf(answer)
   const gate = stepsGateOf(answer)
   const ackItems = acknowledgementItemsOf(answer)
@@ -48,12 +48,12 @@ export default function ResultView({ result }: Props) {
         </div>
         <div>
           <dt>Status</dt>
-          <dd className={`status status--${found ? 'ok' : 'not-found'}`}>
-            <span className="mono">{answer.status}</span>
-            <span>{found ? 'Manual match' : 'Not in manuals'}</span>
+          <dd className={`status status--${kind}`}>
+            {kind !== 'error' && <span className="mono">{answer.rawStatus}</span>}
+            <span>{STATUS_LABELS[kind]}</span>
           </dd>
         </div>
-        {found && (
+        {(kind === 'ok' || kind === 'alert') && (
           <div>
             <dt>Category</dt>
             <dd className="mono">{answer.problemType}</dd>
@@ -80,7 +80,8 @@ export default function ResultView({ result }: Props) {
         onStop={tts.stop}
       />
 
-      {result.issues.length > 0 && <ResponseIssues issues={result.issues} />}
+      {/* A backend failure has its own block; the incomplete notice would only repeat it. */}
+      {kind !== 'error' && result.issues.length > 0 && <ResponseIssues issues={result.issues} />}
 
       <SafetyPanel
         state={safety}
@@ -90,47 +91,75 @@ export default function ResultView({ result }: Props) {
         onToggle={toggle}
       />
 
-      {found ? (
-        <>
-          {answer.escalate && (
-            <div className="notice notice--escalate" role="note">
-              <p className="notice-code">Escalate</p>
-              <p className="notice-title">Escalation recommended</p>
-              <p className="notice-body">
-                The assistant recommends involving the lead engineer for this issue.
-              </p>
-            </div>
+      {kind === 'ok' && answer.escalate && (
+        <div className="notice notice--escalate" role="note">
+          <p className="notice-code">Escalate</p>
+          <p className="notice-title">Escalation recommended</p>
+          <p className="notice-body">The assistant recommends involving the lead engineer for this issue.</p>
+        </div>
+      )}
+
+      {kind === 'alert' && (
+        <div className="notice notice--alert" role="alert">
+          <p className="notice-code">Safety alert · Escalation required</p>
+          <p className="notice-title">Do not start work. Contact the lead engineer.</p>
+          <p className="notice-body">
+            Troubleshooting steps are withheld for safety alerts. Complete the safety actions above and follow
+            the applicable site safety procedures.
+          </p>
+        </div>
+      )}
+
+      {(kind === 'ok' || kind === 'alert') && (
+        <section className="guidance" aria-labelledby="guidance-title">
+          <header className="block-head">
+            <h3 id="guidance-title" className="block-title">
+              Manual guidance
+            </h3>
+            <span className="block-note">Generated from equipment manuals</span>
+          </header>
+
+          {answer.summary ? (
+            <p className="result-summary-text">{answer.summary}</p>
+          ) : (
+            <p className="result-summary-text result-summary-text--empty">The assistant returned no summary.</p>
           )}
 
-          <section className="guidance" aria-labelledby="guidance-title">
-            <header className="block-head">
-              <h3 id="guidance-title" className="block-title">
-                Manual guidance
-              </h3>
-              <span className="block-note">Generated from equipment manuals</span>
-            </header>
+          <StepsList steps={answer.steps} gate={gate} acknowledged={acknowledged} />
+          <SourcesList sources={answer.sources} hasSteps={answer.steps.length > 0} />
+        </section>
+      )}
 
-            {answer.summary ? (
-              <p className="result-summary-text">{answer.summary}</p>
-            ) : (
-              <p className="result-summary-text result-summary-text--empty">The assistant returned no summary.</p>
-            )}
-
-            <StepsList steps={answer.steps} gate={gate} acknowledged={acknowledged} />
-            <SourcesList sources={answer.sources} hasSteps={answer.steps.length > 0} />
-          </section>
-        </>
-      ) : (
+      {kind === 'not-found' && (
         <section className="not-found" aria-labelledby="not-found-title">
-          <p className="not-found-code mono">NOT_FOUND</p>
+          <p className="not-found-code mono">{answer.rawStatus}</p>
           <h3 id="not-found-title" className="not-found-title">
-            No answer found in the manuals
+            No verified manual guidance found
           </h3>
           {answer.summary && <p className="not-found-summary">{answer.summary}</p>}
           <div className="not-found-action">
             <p className="notice-code">Escalation required</p>
             <p>
               <strong>Contact the lead engineer.</strong> Do not attempt a repair based on this response.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {kind === 'error' && (
+        <section className="not-found not-found--error" aria-labelledby="error-title">
+          <p className="not-found-code mono">Assistant error</p>
+          <h3 id="error-title" className="not-found-title">
+            The assistant could not complete this diagnosis
+          </h3>
+          <p className="not-found-summary">
+            This is a system problem, not a finding about the machine. Press Diagnose to try again.
+          </p>
+          <div className="not-found-action">
+            <p className="notice-code">Escalation required</p>
+            <p>
+              <strong>If it happens again, contact the lead engineer.</strong> Do not attempt a repair based on
+              this response.
             </p>
           </div>
         </section>
@@ -149,6 +178,22 @@ export default function ResultView({ result }: Props) {
       )}
     </article>
   )
+}
+
+type ResultKind = 'ok' | 'alert' | 'not-found' | 'error'
+
+const STATUS_LABELS: Record<ResultKind, string> = {
+  ok: 'Manual match',
+  alert: 'Safety alert',
+  'not-found': 'Not in manuals',
+  error: 'Could not complete',
+}
+
+function resultKindOf(answer: AskResult['answer']): ResultKind {
+  if (answer.internalError) return 'error'
+  if (answer.status === 'SAFETY_ALERT') return 'alert'
+  if (answer.status === 'NOT_FOUND') return 'not-found'
+  return 'ok'
 }
 
 function ResponseIssues({ issues }: { issues: string[] }) {

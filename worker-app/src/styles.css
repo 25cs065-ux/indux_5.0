@@ -1516,3 +1516,40 @@ fieldset {
   text-transform: uppercase;
   color: var(--signal);
 }
+
+/* ---------- Response compatibility additions ---------- */
+
+.status--alert .mono {
+  color: var(--hazard);
+}
+
+.status--error span {
+  color: var(--hazard);
+}
+
+.notice--alert {
+  border-left-color: var(--hazard);
+  background: var(--hazard-tint);
+}
+
+.notice--alert .notice-code {
+  color: var(--hazard);
+}
+
+.not-found--error {
+  border-top-color: var(--hazard);
+}
+
+.not-found--error .not-found-code {
+  color: var(--hazard);
+}
+
+.source-manual {
+  display: grid;
+  gap: 2px;
+}
+
+.source-section {
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+}

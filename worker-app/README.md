@@ -64,26 +64,73 @@ the canonical format (`compressor-01` vs `compressor_01`).
 | `parse.ts` | Validates the `/ask` envelope and nested `answer`, repairs incomplete fields and records them in `issues` |
 | `errors.ts` | `ApiError` with `kind`: `validation` (422), `unavailable` (503), `http`, `network`, `timeout`, `aborted`, `malformed` |
 
+### Supported answer formats
+
+The `/ask` envelope (`backend/main.py`) is unchanged. The nested `answer` is
+accepted in two formats:
+
+| | Legacy | Current (`ai/schemas.py`, `ai/brain.py`) |
+|---|---|---|
+| Status | `OK`, `NOT_FOUND` | `SUCCESS`, `NOT_FOUND`, `SAFETY_ALERT` |
+| Danger flag | `is_dangerous` | none (status + checklist) |
+| History note | `history_note` | none |
+| Step number | `step_no` | `step_number` |
+| Source | `manual`, `page` | `manual_title`, `page_number`, `section` |
+| Retrieval | none | `search_score` (vector distance) |
+
 Response handling rules:
 
-- An answer whose `status` is not exactly `OK` or `NOT_FOUND`, or a body with no `answer` object, is rejected as `malformed`. Steps are never shown from a response the app cannot interpret.
-- Missing or null lists become `[]` and missing strings become `""`. Steps without an instruction and sources without a manual are dropped. Every repair is listed in `AskResult.issues`.
-- `NOT_FOUND` always means `escalate = true` with no steps, even if the backend says otherwise.
-- `is_demo` is true only when the backend sends the boolean `true`.
-- `is_dangerous` becomes `null` (unknown) when it is missing or not a boolean. The UI treats unknown as **uncertain**, never as safe, and withholds repair steps (see `src/lib/safety.ts`).
-- 502 and 504 (gateway or dev proxy cannot reach the backend) are reported as `unavailable`.
-- Only 422 and 503 messages from the backend are shown to workers. Other error statuses show a generic message so internal details are not exposed.
+- Status is matched case-insensitively; `SUCCESS` is normalized to `OK` and the
+  received value is shown as is. Any other status, or a body with no `answer`
+  object, is rejected as `malformed`: steps are never shown from a response the
+  app cannot interpret.
+- Field names are read from either format. Missing or null lists become `[]`
+  and missing strings `""`. Steps without an instruction and sources without a
+  manual title are dropped. Repairs are listed in `AskResult.issues`, only for
+  fields the detected format requires (so current answers are not flagged for
+  lacking `is_dangerous` / `history_note`).
+- `NOT_FOUND` always means escalate with no steps.
+- **Internal errors**: a `summary` that looks like backend error text (e.g.
+  `brain.py`'s "Failed to parse AI response: ...", Python tracebacks,
+  `SomethingError: ...`) is discarded, never displayed or spoken. The worker sees
+  "The assistant could not complete this diagnosis", distinct from NOT_FOUND.
+- `search_score` is stored as a distance and **never displayed or spoken**. It
+  is not a confidence value or a safety rating.
+- References show the manual title exactly as returned, the page, and the
+  section when present.
+- `is_demo` is true only when the backend sends the boolean `true`; demo
+  answers are always labelled.
+- Only 422 and 503 messages from the backend are shown to workers. Other error
+  statuses show a generic message so internal details are not exposed.
 
-Mock responses exist only in `src/api/__tests__/`. The app itself has no hard-coded answers.
+Mock responses exist only in test files. The app itself has no hard-coded answers.
 
 ## Safety states (`src/lib/safety.ts`)
 
 | State | When | Steps |
 |---|---|---|
-| `flagged` with checklist | `is_dangerous: true`, or a non-empty `safety_checklist` | Hidden until every checklist item is ticked; unticking locks them again. Acknowledgement resets for each new response |
-| `flagged` without checklist | `is_dangerous: true` and an empty `safety_checklist` | Withheld. No acknowledgement can unlock them; the worker is directed to a qualified supervisor and site safety procedures |
-| `uncertain` | `is_dangerous` missing or not a boolean | Withheld |
-| `not_flagged` | `is_dangerous: false` and no checklist | Allowed, labelled "not a safety clearance" |
+| `alert` | `SAFETY_ALERT` | Withheld; escalation required. No acknowledgement unlocks them (policy pending) |
+| `flagged` with checklist | legacy `is_dangerous: true`, or a checklist with `is_dangerous: false` | Hidden until every checklist item is ticked; unticking locks them again. Acknowledgement resets for each new response |
+| `flagged` without checklist | legacy `is_dangerous: true` and an empty checklist | Withheld; the worker is directed to a qualified supervisor and site safety procedures |
+| `uncertain` | no verified safety signal: **any current-format `SUCCESS`** (with or without a checklist), a legacy/mixed answer without `is_dangerous`, or a backend error | Withheld; summary, references and escalation stay visible |
+| `not_flagged` | legacy `is_dangerous: false` with no checklist | Shown, labelled "not a safety clearance" |
+
+A current-format `SUCCESS` is treated as an **unverified** safety state until the
+backend team confirms that an empty checklist authorises repair steps
+(`docs/json-format.md` on main says "Empty `[]` if safe", but this is not yet a
+confirmed safety policy). The rule is the constant
+`CURRENT_FORMAT_EMPTY_CHECKLIST_MEANS_NOT_FLAGGED` (currently `false`); change it
+only once the policy is confirmed in writing. A regression test guards it.
+
+Open contract questions for the backend team:
+
+1. What action, if any, may a worker take on a `SAFETY_ALERT` (acknowledge and
+   proceed, or always escalate)? Until defined, steps are withheld.
+2. Will an explicit danger flag return, or will the team confirm that
+   "`SUCCESS` + empty checklist" authorises repair steps? Until then, no
+   current-format answer shows actionable steps.
+3. Can parse failures use a distinct status instead of `NOT_FOUND` with the
+   exception text in `summary`?
 
 The UI never states that equipment is safe.
 

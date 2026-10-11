@@ -30,6 +30,17 @@ export default function StepsList({ steps, gate, acknowledged }: Props) {
     )
   }
 
+  if (gate === 'withheld_safety_alert') {
+    return (
+      <div className="steps-locked steps-locked--withheld" role="note">
+        <p className="steps-locked-code mono">Withheld · {label}</p>
+        <p className="steps-locked-text">
+          Steps are not shown because the assistant raised a safety alert. Escalate to the lead engineer.
+        </p>
+      </div>
+    )
+  }
+
   if (gate === 'withheld_no_checklist') {
     return (
       <div className="steps-locked steps-locked--withheld" role="note">

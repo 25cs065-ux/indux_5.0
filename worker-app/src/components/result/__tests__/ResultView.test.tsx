@@ -26,8 +26,12 @@ function result(answer: Partial<TroubleshootingAnswer> = {}, extra: Partial<AskR
         { stepNo: 1, instruction: 'Check the oil level.', checkQuestion: 'Is the oil between the marks?' },
         { stepNo: 2, instruction: 'Inspect the oil cooler.', checkQuestion: '' },
       ],
-      sources: [{ manual: 'GA15-26_Instruction_Book', page: 42 }],
+      sources: [{ manual: 'GA15-26_Instruction_Book', page: 42, section: null }],
       escalate: false,
+      rawStatus: answer.status ?? 'OK',
+      format: 'legacy',
+      searchScore: null,
+      internalError: false,
       ...answer,
     },
   }
@@ -176,9 +180,9 @@ describe('ResultView: references', () => {
       <ResultView
         result={result({
           sources: [
-            { manual: 'GA15-26_Instruction_Book', page: 42 },
-            { manual: 'GA15-26_Instruction_Book', page: 42 },
-            { manual: 'Compressed_Air_Manual.pdf', page: null },
+            { manual: 'GA15-26_Instruction_Book', page: 42, section: null },
+            { manual: 'GA15-26_Instruction_Book', page: 42, section: null },
+            { manual: 'Compressed_Air_Manual.pdf', page: null, section: null },
           ],
         })}
       />,
@@ -205,7 +209,7 @@ describe('ResultView: NOT_FOUND', () => {
 
   it('shows a distinct not-found block with required escalation and no guidance', () => {
     render(<ResultView result={result(notFound)} />)
-    expect(screen.getByRole('heading', { name: 'No answer found in the manuals' })).toBeTruthy()
+    expect(screen.getByRole('heading', { name: 'No verified manual guidance found' })).toBeTruthy()
     expect(screen.getByText('Escalation required')).toBeTruthy()
     expect(screen.getByText('Not found in manual.')).toBeTruthy()
     expect(screen.queryByRole('heading', { name: 'Manual guidance' })).toBeNull()

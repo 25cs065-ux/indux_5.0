@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { TroubleshootingAnswer } from '../../api/types.ts'
-import { acknowledgementItemsOf, safetyStateOf, stepsGateOf } from '../safety.ts'
+import {
+  CURRENT_FORMAT_EMPTY_CHECKLIST_MEANS_NOT_FLAGGED,
+  acknowledgementItemsOf,
+  escalationRequired,
+  safetyStateOf,
+  stepsGateOf,
+} from '../safety.ts'
 
 function answer(overrides: Partial<TroubleshootingAnswer> = {}): TroubleshootingAnswer {
   return {
@@ -13,6 +19,10 @@ function answer(overrides: Partial<TroubleshootingAnswer> = {}): Troubleshooting
     steps: [{ stepNo: 1, instruction: 'Check oil.', checkQuestion: '' }],
     sources: [],
     escalate: false,
+    rawStatus: overrides.status ?? 'OK',
+    format: 'legacy',
+    searchScore: null,
+    internalError: false,
     ...overrides,
   }
 }
@@ -81,5 +91,60 @@ describe('acknowledgementItemsOf', () => {
     expect(acknowledgementItemsOf(answer())).toEqual([])
     expect(acknowledgementItemsOf(answer({ isDangerous: null }))).toEqual([])
     expect(acknowledgementItemsOf(answer({ isDangerous: true, steps: [] }))).toEqual([])
+  })
+})
+
+describe('current-format safety rules', () => {
+  const current = (o: Partial<TroubleshootingAnswer> = {}) =>
+    answer({ format: 'current', rawStatus: 'SUCCESS', isDangerous: null, ...o })
+
+  it('SAFETY_ALERT is an alert and withholds steps, whatever else is set', () => {
+    for (const o of [{}, { isDangerous: false }, { isDangerous: true, safetyChecklist: ['Stop'] }]) {
+      const a = current({ status: 'SAFETY_ALERT', rawStatus: 'SAFETY_ALERT', ...o })
+      expect(safetyStateOf(a)).toBe('alert')
+      expect(stepsGateOf(a)).toBe('withheld_safety_alert')
+      expect(acknowledgementItemsOf(a)).toEqual([])
+      expect(escalationRequired(a)).toBe(true)
+    }
+  })
+
+  // Regression: the policy stays strict until the backend team confirms it.
+  it('current SUCCESS with no checklist: unverified, steps withheld', () => {
+    expect(CURRENT_FORMAT_EMPTY_CHECKLIST_MEANS_NOT_FLAGGED).toBe(false)
+    expect(safetyStateOf(current())).toBe('uncertain')
+    expect(stepsGateOf(current())).toBe('withheld')
+    expect(acknowledgementItemsOf(current())).toEqual([])
+  })
+
+  it('current SUCCESS never yields not_flagged or allowed, with or without escalate', () => {
+    for (const o of [{}, { escalate: true }, { safetyChecklist: ['Stop'] }]) {
+      expect(safetyStateOf(current(o))).toBe('uncertain')
+      expect(stepsGateOf(current(o))).toBe('withheld')
+    }
+  })
+
+  it('current SUCCESS with a checklist: uncertain, withheld', () => {
+    const a = current({ safetyChecklist: ['Release pressure'] })
+    expect(safetyStateOf(a)).toBe('uncertain')
+    expect(stepsGateOf(a)).toBe('withheld')
+  })
+
+  it('mixed format without is_dangerous: uncertain, withheld', () => {
+    const a = current({ format: 'mixed' })
+    expect(safetyStateOf(a)).toBe('uncertain')
+    expect(stepsGateOf(a)).toBe('withheld')
+  })
+
+  it('internal error: uncertain, no steps, escalation required', () => {
+    const a = current({ internalError: true })
+    expect(safetyStateOf(a)).toBe('uncertain')
+    expect(stepsGateOf(a)).toBe('none')
+    expect(escalationRequired(a)).toBe(true)
+  })
+
+  it('escalation is required for NOT_FOUND and optional for OK', () => {
+    expect(escalationRequired(current({ status: 'NOT_FOUND' }))).toBe(true)
+    expect(escalationRequired(current())).toBe(false)
+    expect(escalationRequired(current({ escalate: true }))).toBe(true)
   })
 })
