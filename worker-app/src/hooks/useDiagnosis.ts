@@ -1,0 +1,70 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ApiError, askQuestion, isApiError } from '../api/index.ts'
+import type { AskResult } from '../api/index.ts'
+
+export interface DiagnosisRequest {
+  question: string
+  machineId: string
+}
+
+export type DiagnosisState =
+  | { phase: 'idle' }
+  | { phase: 'loading'; request: DiagnosisRequest }
+  /** `id` is unique per response, so per-answer UI state (acknowledgement) resets. */
+  | { phase: 'success'; request: DiagnosisRequest; result: AskResult; id: number }
+  | { phase: 'error'; request: DiagnosisRequest; error: ApiError }
+
+/**
+ * Owns the /ask request lifecycle. Only one request can be in flight:
+ * submit() while loading is ignored and returns false.
+ */
+export function useDiagnosis() {
+  const [state, setState] = useState<DiagnosisState>({ phase: 'idle' })
+  const inFlight = useRef<AbortController | null>(null)
+  const responseCount = useRef(0)
+
+  useEffect(() => () => inFlight.current?.abort(), [])
+
+  const submit = useCallback(async (request: DiagnosisRequest): Promise<boolean> => {
+    if (inFlight.current) return false
+    const controller = new AbortController()
+    inFlight.current = controller
+    setState({ phase: 'loading', request })
+
+    try {
+      const result = await askQuestion(request.question, request.machineId, { signal: controller.signal })
+      responseCount.current += 1
+      setState({ phase: 'success', request, result, id: responseCount.current })
+    } catch (err) {
+      if (isApiError(err) && err.kind === 'aborted') {
+        setState({ phase: 'idle' })
+      } else {
+        const error = isApiError(err)
+          ? err
+          : new ApiError('http', 'Something went wrong. Please try again.')
+        setState({ phase: 'error', request, error })
+      }
+    } finally {
+      if (inFlight.current === controller) inFlight.current = null
+    }
+    return true
+  }, [])
+
+  const cancel = useCallback(() => {
+    inFlight.current?.abort()
+  }, [])
+
+  /** Clears the diagnosis (cancelling any request in flight) and returns to idle. */
+  const reset = useCallback(() => {
+    inFlight.current?.abort()
+    inFlight.current = null
+    setState({ phase: 'idle' })
+  }, [])
+
+  const retry = useCallback(() => {
+    if (state.phase === 'error') return submit(state.request)
+    return Promise.resolve(false)
+  }, [state, submit])
+
+  return { state, submit, cancel, retry, reset, isLoading: state.phase === 'loading' }
+}
