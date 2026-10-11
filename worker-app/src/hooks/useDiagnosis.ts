@@ -10,7 +10,8 @@ export interface DiagnosisRequest {
 export type DiagnosisState =
   | { phase: 'idle' }
   | { phase: 'loading'; request: DiagnosisRequest }
-  | { phase: 'success'; request: DiagnosisRequest; result: AskResult }
+  /** `id` is unique per response, so per-answer UI state (acknowledgement) resets. */
+  | { phase: 'success'; request: DiagnosisRequest; result: AskResult; id: number }
   | { phase: 'error'; request: DiagnosisRequest; error: ApiError }
 
 /**
@@ -20,6 +21,7 @@ export type DiagnosisState =
 export function useDiagnosis() {
   const [state, setState] = useState<DiagnosisState>({ phase: 'idle' })
   const inFlight = useRef<AbortController | null>(null)
+  const responseCount = useRef(0)
 
   useEffect(() => () => inFlight.current?.abort(), [])
 
@@ -31,7 +33,8 @@ export function useDiagnosis() {
 
     try {
       const result = await askQuestion(request.question, request.machineId, { signal: controller.signal })
-      setState({ phase: 'success', request, result })
+      responseCount.current += 1
+      setState({ phase: 'success', request, result, id: responseCount.current })
     } catch (err) {
       if (isApiError(err) && err.kind === 'aborted') {
         setState({ phase: 'idle' })

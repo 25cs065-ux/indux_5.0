@@ -18,17 +18,27 @@ export function safetyStateOf(answer: TroubleshootingAnswer): SafetyState {
 
 /**
  * Whether actionable steps may be shown, before any acknowledgement:
- * - none:          no steps to show (NOT_FOUND or empty list)
- * - withheld:      safety is uncertain; steps must not be shown
- * - requires_ack:  safety checks must be acknowledged first
- * - allowed:       steps may be shown
+ * - none:                  no steps to show (NOT_FOUND or empty list)
+ * - withheld:              safety is uncertain; steps must not be shown
+ * - withheld_no_checklist: hazard flagged without a checklist; there is
+ *                          nothing specific to acknowledge, so steps stay
+ *                          withheld and the worker is sent to a supervisor
+ * - requires_ack:          every checklist item must be acknowledged first
+ * - allowed:               steps may be shown
  */
-export type StepsGate = 'none' | 'withheld' | 'requires_ack' | 'allowed'
+export type StepsGate = 'none' | 'withheld' | 'withheld_no_checklist' | 'requires_ack' | 'allowed'
 
 export function stepsGateOf(answer: TroubleshootingAnswer): StepsGate {
   if (answer.status !== 'OK' || answer.steps.length === 0) return 'none'
   const state = safetyStateOf(answer)
   if (state === 'uncertain') return 'withheld'
-  if (state === 'flagged') return 'requires_ack'
+  if (state === 'flagged') {
+    return answer.safetyChecklist.length > 0 ? 'requires_ack' : 'withheld_no_checklist'
+  }
   return 'allowed'
+}
+
+/** Checklist items the worker must tick before steps are revealed. */
+export function acknowledgementItemsOf(answer: TroubleshootingAnswer): string[] {
+  return stepsGateOf(answer) === 'requires_ack' ? answer.safetyChecklist : []
 }

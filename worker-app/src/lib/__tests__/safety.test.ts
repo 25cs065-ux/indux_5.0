@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TroubleshootingAnswer } from '../../api/types.ts'
-import { safetyStateOf, stepsGateOf } from '../safety.ts'
+import { acknowledgementItemsOf, safetyStateOf, stepsGateOf } from '../safety.ts'
 
 function answer(overrides: Partial<TroubleshootingAnswer> = {}): TroubleshootingAnswer {
   return {
@@ -44,6 +44,10 @@ describe('stepsGateOf', () => {
     expect(stepsGateOf(answer({ isDangerous: null }))).toBe('withheld')
   })
 
+  it('withholds steps when a hazard is flagged without a checklist', () => {
+    expect(stepsGateOf(answer({ isDangerous: true, safetyChecklist: [] }))).toBe('withheld_no_checklist')
+  })
+
   it('requires acknowledgement when flagged', () => {
     expect(stepsGateOf(answer({ isDangerous: true, safetyChecklist: ['Stop'] }))).toBe('requires_ack')
   })
@@ -58,5 +62,24 @@ describe('stepsGateOf', () => {
 
   it('has no steps for an empty step list', () => {
     expect(stepsGateOf(answer({ steps: [] }))).toBe('none')
+  })
+})
+
+describe('acknowledgementItemsOf', () => {
+  it('uses the backend checklist when a hazard is flagged', () => {
+    const a = answer({ isDangerous: true, safetyChecklist: ['Stop', 'Release pressure'] })
+    expect(acknowledgementItemsOf(a)).toEqual(['Stop', 'Release pressure'])
+  })
+
+  // Regression: a flagged hazard without a checklist must not be unlockable
+  // through a generic acknowledgement.
+  it('offers nothing to acknowledge when a hazard is flagged without a checklist', () => {
+    expect(acknowledgementItemsOf(answer({ isDangerous: true, safetyChecklist: [] }))).toEqual([])
+  })
+
+  it('needs no acknowledgement when nothing is gated', () => {
+    expect(acknowledgementItemsOf(answer())).toEqual([])
+    expect(acknowledgementItemsOf(answer({ isDangerous: null }))).toEqual([])
+    expect(acknowledgementItemsOf(answer({ isDangerous: true, steps: [] }))).toEqual([])
   })
 })

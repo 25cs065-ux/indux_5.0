@@ -80,7 +80,8 @@ Mock responses exist only in `src/api/__tests__/`. The app itself has no hard-co
 
 | State | When | Steps |
 |---|---|---|
-| `flagged` | `is_dangerous: true`, or a non-empty `safety_checklist` | Require acknowledgement (Stage 4) |
+| `flagged` with checklist | `is_dangerous: true`, or a non-empty `safety_checklist` | Hidden until every checklist item is ticked; unticking locks them again. Acknowledgement resets for each new response |
+| `flagged` without checklist | `is_dangerous: true` and an empty `safety_checklist` | Withheld. No acknowledgement can unlock them; the worker is directed to a qualified supervisor and site safety procedures |
 | `uncertain` | `is_dangerous` missing or not a boolean | Withheld |
 | `not_flagged` | `is_dangerous: false` and no checklist | Allowed, labelled "not a safety clearance" |
 
@@ -121,9 +122,7 @@ internet.
 1. ✅ Scaffold: Vite + React + TS, env config, mobile-first styles, start screen
 2. ✅ API layer: typed client for `/ask` and `/health`, error handling (503, 422, network, timeout), response validation, tests
 3. ✅ Worker interface: machine selection or entry, editable question, Diagnose via `/ask`, loading, error and retry states, safety state notice (no steps shown yet)
-4. Answer view: safety checklist (acknowledgement required before steps on
-   dangerous answers; summary, escalation and sources always visible), numbered
-   steps, sources, NOT_FOUND / escalate
+4. ✅ Diagnosis view: safety checklist with per-item acknowledgement before steps on flagged answers (summary, escalation and references always visible), numbered steps with check questions, manual references, distinct NOT_FOUND block, repair history shown separately as context, incomplete-response notice
 5. Speech-to-text (Web Speech API) with an editable transcript, sent via `/ask`
 6. Read Aloud / Stop Speaking (speechSynthesis)
 7. Polish, accessibility, deployment
