@@ -6,7 +6,11 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from supabase import create_client, Client
-from ai.schemas import QueryResponse, StepItem, SourceReference
+
+try:
+    from ai.schemas import QueryResponse, StepItem, SourceReference
+except ModuleNotFoundError:
+    from schemas import QueryResponse, StepItem, SourceReference
 
 load_dotenv()
 
@@ -18,44 +22,22 @@ supabase: Client = create_client(
 
 SAFETY_TRIGGERS = [
     {
-        # S1 — Opening panels/covers while machine is running
-        "keywords": ["open panel", "remove cover", "open door", "inside the machine"],
+        "keywords": ["electrical", "wiring", "high voltage", "capacitor", "shock", "motor terminal"],
         "checklist": [
-            "Press the emergency stop button.",
-            "Switch off and isolate power.",
-            "Wait for the unit to fully depressurise before opening."
+            "Perform Lockout/Tagout (LOTO) on the main breaker.",
+            "Verify zero electrical energy with a calibrated multimeter.",
+            "Wear insulated rubber gloves and eye protection."
         ]
     },
     {
-        # S2 — Working on pressurised parts or loosening fittings
-        "keywords": ["high pressure", "receiver tank", "blowdown", "pressure relief", "burst",
-                     "loosen", "disconnect", "valve", "drain"],
+        "keywords": ["high pressure", "receiver tank", "blowdown", "pressure relief", "burst"],
         "checklist": [
-            "Stop the compressor and release all air pressure.",
-            "Confirm the pressure gauge reads zero before touching any fitting.",
+            "Turn off the unit and vent all air until pressure gauge reads 0 PSI.",
+            "Do not loosen any fitting or hose under active pressure.",
             "Wear safety goggles and ear protection."
         ]
     },
     {
-        # S3 — Electrical work or burning smell / sparks / trip
-        "keywords": ["electrical", "wiring", "high voltage", "capacitor", "shock", "motor terminal",
-                     "burning smell", "sparks", "trip"],
-        "checklist": [
-            "Isolate power and perform Lockout/Tagout (LOTO) on the main breaker.",
-            "Do not touch any cables or terminals.",
-            "Call a qualified electrician before proceeding."
-        ]
-    },
-    {
-        # S4 — Hot surfaces or hot oil
-        "keywords": ["hot", "overheat", "oil change", "drain oil"],
-        "checklist": [
-            "Stop the machine and allow it to cool completely before any contact.",
-            "Wear heat-resistant gloves and eye protection when handling hot oil."
-        ]
-    },
-    {
-        # Rotating machinery (unchanged)
         "keywords": ["belt", "pulley", "flywheel", "rotating", "fan blade"],
         "checklist": [
             "Power down and tag out machine.",
@@ -84,8 +66,6 @@ def safety_check(question: str) -> List[str]:
 
 def search_chunks(question: str, top_k: int = 5) -> List[Dict[str, Any]]:
     exact_matches = []
-    
-    # 1. Exact match for error codes (e.g. 'E-12', 'ERR-01')
     code_match = re.findall(r'\b[A-Za-z]{1,4}[-_\s]?\d{1,4}\b', question)
     if code_match:
         for code in code_match:
@@ -93,11 +73,12 @@ def search_chunks(question: str, top_k: int = 5) -> List[Dict[str, Any]]:
             try:
                 res = supabase.table("manual_chunks").select("*").ilike("content", f"%{clean_code}%").limit(2).execute()
                 if res.data:
+                    for row in res.data:
+                        row["distance"] = 0.0
                     exact_matches.extend(res.data)
             except Exception as e:
                 print(f"[Warning] Error querying manual_chunks table: {e}")
 
-    # 2. Vector embedding retrieval
     vector_matches = []
     try:
         vector = get_embedding(question)
@@ -109,7 +90,6 @@ def search_chunks(question: str, top_k: int = 5) -> List[Dict[str, Any]]:
     except Exception as e:
         print(f"[Warning] match_manual_chunks RPC not yet available in Supabase: {e}")
 
-    # Filter by cutoff distance
     valid_vector_matches = [
         item for item in vector_matches 
         if item.get("distance", 0.0) <= SIMILARITY_DISTANCE_CUTOFF
@@ -133,16 +113,21 @@ def ask(
     safety_items = safety_check(question)
     chunks = search_chunks(question)
 
+    top_distance = None
+    if chunks:
+        distances = [c.get("distance", 0.0) for c in chunks if c.get("distance") is not None]
+        top_distance = min(distances) if distances else 0.0
+
     if not chunks:
         not_found_obj = QueryResponse(
             status="NOT_FOUND",
-            problem_type="other",
+            problem_type="unknown",
             summary="This issue or error code was not found in the verified manual.",
-            is_dangerous=bool(safety_items),
             safety_checklist=safety_items,
             steps=[],
             sources=[],
-            escalate=True
+            escalate=True,
+            search_score=top_distance
         )
         return not_found_obj.model_dump()
 
@@ -152,13 +137,9 @@ def ask(
     ])
 
     history_text = "No prior repair history recorded for this machine."
-
     if repair_history:
         history_text = "\n".join([
-            f"- Past Date: {h.get('date')} | "
-            f"Issue: {h.get('problem')} | "
-            f"Action Taken: {h.get('action')} | "
-            f"Outcome: {h.get('outcome', 'Not recorded')}"
+            f"- Past Date: {h.get('date')} | Issue: {h.get('problem')} | Resolution: {h.get('action')}"
             for h in repair_history
         ])
 
@@ -177,13 +158,11 @@ VERIFIED MANUAL CHUNKS:
 
 OUTPUT RULES:
 - Output valid JSON adhering to the specified schema.
-- status must be "OK" when the manual supports an answer, or "NOT_FOUND" when it does not.
 - If the chunks do not contain a solution, return status="NOT_FOUND", empty steps list [], and escalate=true.
 - Break fixes into short, clear, numbered steps. Each step must have a yes/no verification question.
 - Cite the manual and page accurately.
-- Categorize problem_type into one of: ['overheating', 'low_pressure', 'oil_leak', 'electrical', 'noise', 'belt', 'other'].
+- Categorize problem_type into one of: ['overheating', 'low pressure', 'oil leak', 'electrical', 'noise', 'belt', 'general'].
 - NEVER return null for lists; use empty [] instead.
-- NEVER return null for strings; use "" instead.
 """
 
     response = client.models.generate_content(
@@ -198,19 +177,19 @@ OUTPUT RULES:
 
     try:
         parsed_data = json.loads(response.text)
+        parsed_data["search_score"] = top_distance
         if safety_items:
             existing = parsed_data.get("safety_checklist", [])
             parsed_data["safety_checklist"] = list(dict.fromkeys(existing + safety_items))
-            parsed_data["is_dangerous"] = True
         return parsed_data
     except Exception as e:
         return QueryResponse(
             status="NOT_FOUND",
-            problem_type="other",
             summary=f"Failed to parse AI response: {str(e)}",
             steps=[],
             sources=[],
-            escalate=True
+            escalate=True,
+            search_score=top_distance
         ).model_dump()
 
 def diagnose_photo(image_bytes: bytes, mime_type: str = "image/jpeg") -> Dict[str, Any]:
