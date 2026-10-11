@@ -1,10 +1,15 @@
-# Python virtual environment
+﻿# Python virtual environment
 .venv/
 venv/
+ai/venv/
 
 # Environment variables and API secrets
 .env
 .env.*
+ai/.env
+
+# Keep the example environment file
+!.env.example
 
 # Python cache files
 __pycache__/
@@ -13,6 +18,9 @@ __pycache__/
 
 # Manual PDFs
 docs/manuals/*.pdf
+
+# Admin app - uploaded PDFs are transient and must not be committed
+admin-app/uploads/
 
 # Test and tool caches
 .pytest_cache/
@@ -23,3 +31,6 @@ docs/manuals/*.pdf
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Embedding checkpoints -- local resume files, not for version control
+ingest/output/.checkpoints/

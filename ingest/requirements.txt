@@ -9,6 +9,14 @@
 pypdf>=4.0.0              # Fallback PDF text extractor (pure-Python, no C build)
 pymupdf>=1.24.0           # Primary PDF extractor — bounding-box positions, fast
 
+# --- OCR (scanned / image-only PDFs) ---------------------------------------
+# Tesseract must be installed separately on the OS before these are useful.
+#   Windows: winget install UB-Mannheim.TesseractOCR
+#   Linux:   apt-get install tesseract-ocr
+# pytesseract provides the Python wrapper; Pillow renders PDF pages to images.
+pytesseract>=0.3.10       # Python wrapper for Tesseract OCR engine
+Pillow>=10.0.0            # Image I/O — renders PDF page pixmaps for Tesseract
+
 # --- Embedding (Gemini) ----------------------------------------------------
 # Uses gemini-embedding-001 (3072 dims) via Google GenAI SDK to match brain.py.
 # Requires GEMINI_API_KEY in ingest/.env.
