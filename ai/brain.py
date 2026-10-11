@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from supabase import create_client, Client
-from schemas import QueryResponse, StepItem, SourceReference
+from ai.schemas import QueryResponse, StepItem, SourceReference
 
 load_dotenv()
 
@@ -129,9 +129,13 @@ def ask(
     ])
 
     history_text = "No prior repair history recorded for this machine."
+
     if repair_history:
         history_text = "\n".join([
-            f"- Past Date: {h.get('date')} | Issue: {h.get('problem')} | Resolution: {h.get('action')}"
+            f"- Past Date: {h.get('date')} | "
+            f"Issue: {h.get('problem')} | "
+            f"Action Taken: {h.get('action')} | "
+            f"Outcome: {h.get('outcome', 'Not recorded')}"
             for h in repair_history
         ])
 
