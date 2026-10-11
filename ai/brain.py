@@ -121,7 +121,7 @@ def ask(
     if not chunks:
         not_found_obj = QueryResponse(
             status="NOT_FOUND",
-            problem_type="unknown",
+            problem_type="other",
             summary="This issue or error code was not found in the verified manual.",
             safety_checklist=safety_items,
             steps=[],
@@ -161,12 +161,12 @@ OUTPUT RULES:
 - If the chunks do not contain a solution, return status="NOT_FOUND", empty steps list [], and escalate=true.
 - Break fixes into short, clear, numbered steps. Each step must have a yes/no verification question.
 - Cite the manual and page accurately.
-- Categorize problem_type into one of: ['overheating', 'low pressure', 'oil leak', 'electrical', 'noise', 'belt', 'general'].
+- Categorize problem_type into one of: ['overheating', 'low_pressure', 'oil_leak', 'electrical', 'noise', 'belt', 'other']. Default to 'other'.
 - NEVER return null for lists; use empty [] instead.
 """
 
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.0-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -208,7 +208,7 @@ Return JSON with:
 }
 """
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-2.0-flash",
         contents=[image_part, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -218,7 +218,19 @@ Return JSON with:
     return json.loads(response.text)
 
 def check_step_reply(spoken_reply: str, step_question: str) -> str:
-    prompt = f"""
+    # 1. Fast local keyword fallback (bulletproof for demos if rate-limited)
+    low = spoken_reply.lower().strip()
+    affirmative = ["yes", "yeah", "yup", "done", "checked", "fine", "ok", "okay", "good", "completed", "looks good"]
+    negative = ["no", "nope", "not yet", "failed", "broken", "issue", "problem", "leaking", "stuck"]
+    
+    if any(re.search(rf"\b{word}\b", low) for word in affirmative):
+        return "yes"
+    if any(re.search(rf"\b{word}\b", low) for word in negative):
+        return "no"
+
+    # 2. Gemini classification for nuanced voice replies
+    try:
+        prompt = f"""
 Step question: "{step_question}"
 Technician spoken answer: "{spoken_reply}"
 
@@ -229,14 +241,17 @@ Classify the answer into exactly one of these lowercase words:
 
 Return ONLY the single word.
 """
-    response = client.models.generate_content(
-        model="gemini-2.5-flash",
-        contents=prompt,
-        config=types.GenerateContentConfig(temperature=0.0)
-    )
-    res = response.text.strip().lower()
-    if "yes" in res:
-        return "yes"
-    if "no" in res:
-        return "no"
-    return "unclear"
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt,
+            config=types.GenerateContentConfig(temperature=0.0)
+        )
+        res = response.text.strip().lower()
+        if "yes" in res:
+            return "yes"
+        if "no" in res:
+            return "no"
+        return "unclear"
+    except Exception as e:
+        print(f"[Warning] Rate limit or API error in check_step_reply: {e}")
+        return "unclear"

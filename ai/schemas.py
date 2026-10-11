@@ -13,7 +13,7 @@ class SourceReference(BaseModel):
 
 class QueryResponse(BaseModel):
     status: str = Field(description="'SUCCESS', 'NOT_FOUND', or 'SAFETY_ALERT'")
-    problem_type: Optional[str] = "general"
+   problem_type: Optional[str] = "other"
     summary: str
     safety_checklist: List[str] = Field(default_factory=list)
     steps: List[StepItem] = Field(default_factory=list)
