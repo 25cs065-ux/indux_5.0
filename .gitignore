@@ -1,25 +1,25 @@
+# Python virtual environment
+.venv/
+venv/
+
+# Environment variables and API secrets
+.env
+.env.*
+
 # Python cache files
 __pycache__/
 *.py[cod]
+*.pyo
 
-# Pytest cache
-.pytest_cache/
-
-# Virtual environments
-.venv/
-venv/
-ai/venv/
-
-# Environment variables and secrets
-.env
-.env.*
-ai/.env
-
-# Keep the example environment file
-!.env.example
-
-# Admin app - uploaded PDFs are transient and must not be committed
-admin-app/uploads/
-
-# PDF manuals stored in docs/
+# Manual PDFs
 docs/manuals/*.pdf
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE and OS files
+.vscode/
+.DS_Store
+Thumbs.db

@@ -1,4 +1,4 @@
-from brain import safety_check, check_step_reply, ask
+from ai.brain import safety_check, check_step_reply, ask
 
 def run_quick_checks():
     print("--- 1. Testing Safety Trigger ---")

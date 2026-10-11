@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from supabase import create_client, Client
-from schemas import QueryResponse, StepItem, SourceReference
+from ai.schemas import QueryResponse, StepItem, SourceReference
 
 load_dotenv()
 
@@ -18,22 +18,44 @@ supabase: Client = create_client(
 
 SAFETY_TRIGGERS = [
     {
-        "keywords": ["electrical", "wiring", "high voltage", "capacitor", "shock", "motor terminal"],
+        # S1 — Opening panels/covers while machine is running
+        "keywords": ["open panel", "remove cover", "open door", "inside the machine"],
         "checklist": [
-            "Perform Lockout/Tagout (LOTO) on the main breaker.",
-            "Verify zero electrical energy with a calibrated multimeter.",
-            "Wear insulated rubber gloves and eye protection."
+            "Press the emergency stop button.",
+            "Switch off and isolate power.",
+            "Wait for the unit to fully depressurise before opening."
         ]
     },
     {
-        "keywords": ["high pressure", "receiver tank", "blowdown", "pressure relief", "burst"],
+        # S2 — Working on pressurised parts or loosening fittings
+        "keywords": ["high pressure", "receiver tank", "blowdown", "pressure relief", "burst",
+                     "loosen", "disconnect", "valve", "drain"],
         "checklist": [
-            "Turn off the unit and vent all air until pressure gauge reads 0 PSI.",
-            "Do not loosen any fitting or hose under active pressure.",
+            "Stop the compressor and release all air pressure.",
+            "Confirm the pressure gauge reads zero before touching any fitting.",
             "Wear safety goggles and ear protection."
         ]
     },
     {
+        # S3 — Electrical work or burning smell / sparks / trip
+        "keywords": ["electrical", "wiring", "high voltage", "capacitor", "shock", "motor terminal",
+                     "burning smell", "sparks", "trip"],
+        "checklist": [
+            "Isolate power and perform Lockout/Tagout (LOTO) on the main breaker.",
+            "Do not touch any cables or terminals.",
+            "Call a qualified electrician before proceeding."
+        ]
+    },
+    {
+        # S4 — Hot surfaces or hot oil
+        "keywords": ["hot", "overheat", "oil change", "drain oil"],
+        "checklist": [
+            "Stop the machine and allow it to cool completely before any contact.",
+            "Wear heat-resistant gloves and eye protection when handling hot oil."
+        ]
+    },
+    {
+        # Rotating machinery (unchanged)
         "keywords": ["belt", "pulley", "flywheel", "rotating", "fan blade"],
         "checklist": [
             "Power down and tag out machine.",
@@ -114,8 +136,9 @@ def ask(
     if not chunks:
         not_found_obj = QueryResponse(
             status="NOT_FOUND",
-            problem_type="unknown",
+            problem_type="other",
             summary="This issue or error code was not found in the verified manual.",
+            is_dangerous=bool(safety_items),
             safety_checklist=safety_items,
             steps=[],
             sources=[],
@@ -129,9 +152,13 @@ def ask(
     ])
 
     history_text = "No prior repair history recorded for this machine."
+
     if repair_history:
         history_text = "\n".join([
-            f"- Past Date: {h.get('date')} | Issue: {h.get('problem')} | Resolution: {h.get('action')}"
+            f"- Past Date: {h.get('date')} | "
+            f"Issue: {h.get('problem')} | "
+            f"Action Taken: {h.get('action')} | "
+            f"Outcome: {h.get('outcome', 'Not recorded')}"
             for h in repair_history
         ])
 
@@ -150,11 +177,13 @@ VERIFIED MANUAL CHUNKS:
 
 OUTPUT RULES:
 - Output valid JSON adhering to the specified schema.
+- status must be "OK" when the manual supports an answer, or "NOT_FOUND" when it does not.
 - If the chunks do not contain a solution, return status="NOT_FOUND", empty steps list [], and escalate=true.
 - Break fixes into short, clear, numbered steps. Each step must have a yes/no verification question.
 - Cite the manual and page accurately.
-- Categorize problem_type into one of: ['overheating', 'low pressure', 'oil leak', 'electrical', 'noise', 'belt', 'general'].
+- Categorize problem_type into one of: ['overheating', 'low_pressure', 'oil_leak', 'electrical', 'noise', 'belt', 'other'].
 - NEVER return null for lists; use empty [] instead.
+- NEVER return null for strings; use "" instead.
 """
 
     response = client.models.generate_content(
@@ -172,10 +201,12 @@ OUTPUT RULES:
         if safety_items:
             existing = parsed_data.get("safety_checklist", [])
             parsed_data["safety_checklist"] = list(dict.fromkeys(existing + safety_items))
+            parsed_data["is_dangerous"] = True
         return parsed_data
     except Exception as e:
         return QueryResponse(
             status="NOT_FOUND",
+            problem_type="other",
             summary=f"Failed to parse AI response: {str(e)}",
             steps=[],
             sources=[],
