@@ -55,6 +55,27 @@ Machine IDs are sent to the backend exactly as entered (or as given in the QR
 link `?machine=`). They are not normalized until the backend team confirms
 the canonical format (`compressor-01` vs `compressor_01`).
 
+## Pages and navigation (`src/router/`, `src/pages/`)
+
+| Route | Page | Contents |
+|---|---|---|
+| `#/equipment` (default) | Equipment | Machine selection or ID entry, details from the site machine list only (`src/data/machines.ts`, a copy of `docs/lists/machines.json`), "Selected from QR code" tag, Start diagnosis |
+| `#/diagnose` | Diagnose | Machine bar, voice-enabled issue form, diagnosis report |
+| `#/history` | Repair history | Placeholder only: no records are shown until the read-only history page is built |
+
+- Hash routes work on any static host and keep the `?machine=` query from QR
+  links. A QR link opens Equipment with the machine preselected; the worker
+  confirms with Start diagnosis.
+- Mobile (< 960px): fixed bottom bar with 64px targets. Desktop: tabs in the
+  header. The active page is marked with `aria-current="page"`.
+- On page change the page title updates, the view scrolls to the top and focus
+  moves to the page heading.
+- Kept across pages: selected machine, question text, current diagnosis.
+- Reset when leaving Diagnose: safety acknowledgements (the diagnosis view
+  unmounts), voice recording (aborted; recognised text is kept) and read-aloud.
+- No machine status, health, readings or activity are shown, because none exist
+  in the repository.
+
 ## API layer (`src/api/`)
 
 | File | Purpose |
@@ -262,7 +283,9 @@ internet.
 4. ✅ Diagnosis view: safety checklist with per-item acknowledgement before steps on flagged answers (summary, escalation and references always visible), numbered steps with check questions, manual references, distinct NOT_FOUND block, repair history shown separately as context, incomplete-response notice
 5. ✅ Speech-to-text (Web Speech API): Record / Stop recording, listening indicator, interim text, editable transcript, no auto-submit, error handling; sent via `/ask` only when Diagnose is pressed
 6. ✅ Read Aloud / Stop Speaking (speechSynthesis), following the on-screen safety gating
-7. Polish, accessibility, deployment
+7. ✅ (Stage B) Three-page navigation and Equipment page
+8. Read-only repair history page
+9. Polish, accessibility, deployment
 
 ### Automated testing (added in later stages)
 

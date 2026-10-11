@@ -1,22 +1,40 @@
-import { useEffect, useRef, useState } from 'react'
-import DiagnosisPanel from './components/DiagnosisPanel.tsx'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import AppNav from './components/AppNav.tsx'
 import Header from './components/Header.tsx'
-import IssueForm, { QUESTION_MAX_LENGTH } from './components/IssueForm.tsx'
-import MachineSelect from './components/MachineSelect.tsx'
-import Section from './components/Section.tsx'
+import { QUESTION_MAX_LENGTH } from './components/IssueForm.tsx'
 import { useDiagnosis } from './hooks/useDiagnosis.ts'
 import { useSpeechRecognition } from './hooks/useSpeechRecognition.ts'
-import { initialMachineId, saveLastMachine } from './lib/machineParam.ts'
+import { initialMachineId, machineFromSearch, saveLastMachine } from './lib/machineParam.ts'
+import DiagnosePage from './pages/DiagnosePage.tsx'
+import EquipmentPage from './pages/EquipmentPage.tsx'
+import HistoryPage from './pages/HistoryPage.tsx'
+import type { Route } from './router/useHashRoute.ts'
+import { useHashRoute } from './router/useHashRoute.ts'
 import { cancelAllSpeech } from './speech/synthesis.ts'
 import { composeQuestion } from './speech/transcript.ts'
 
+const PAGE_TITLES: Record<Route, string> = {
+  equipment: 'Equipment',
+  diagnose: 'Diagnose',
+  history: 'Repair history',
+}
+
+const MACHINE_REQUIRED = 'Select or enter a machine ID.'
+
+/**
+ * App frame. Owns the state that must survive page changes: the selected
+ * machine, the question, the current diagnosis and voice input. Per-answer
+ * state (safety acknowledgement, read-aloud) lives in the diagnosis view,
+ * which unmounts when the worker leaves Diagnose, so it always resets.
+ */
 export default function App() {
+  const [route, navigate] = useHashRoute()
+  const qrMachineId = useMemo(() => machineFromSearch(window.location.search), [])
   const [machineId, setMachineId] = useState(() => initialMachineId(window.location.search))
   const [question, setQuestion] = useState('')
   const [machineError, setMachineError] = useState<string | null>(null)
   const [questionError, setQuestionError] = useState<string | null>(null)
   const { state, submit, cancel, retry, isLoading } = useDiagnosis()
-  const outputRef = useRef<HTMLDivElement>(null)
 
   // Text in the field when recording started. Each recognition update
   // rebuilds the question from this, so duplicate events cannot repeat words.
@@ -24,6 +42,40 @@ export default function App() {
   const speech = useSpeechRecognition({
     onTranscript: (spoken) => setQuestion(composeQuestion(dictationBase.current, spoken, QUESTION_MAX_LENGTH)),
   })
+  const { abort: abortRecording } = speech
+
+  // Leaving Diagnose stops the microphone and any read-aloud.
+  useEffect(() => {
+    if (route !== 'diagnose') {
+      abortRecording()
+      cancelAllSpeech()
+    }
+  }, [route, abortRecording])
+
+  // Page changes: title, scroll to top, and focus the new page heading.
+  // Not on first load, so the initial page does not steal focus.
+  const initialRoute = useRef(route)
+  const hasNavigated = useRef(false)
+  if (route !== initialRoute.current) hasNavigated.current = true
+  useEffect(() => {
+    document.title = `${PAGE_TITLES[route]} · INDUX Field Assistant`
+    if (hasNavigated.current) window.scrollTo(0, 0)
+  }, [route])
+
+  const handleMachineChange = (id: string) => {
+    setMachineId(id)
+    if (machineError) setMachineError(null)
+  }
+
+  const handleStartDiagnosis = () => {
+    if (!machineId.trim()) {
+      setMachineError(MACHINE_REQUIRED)
+      return
+    }
+    saveLastMachine(machineId)
+    setMachineError(null)
+    navigate('diagnose')
+  }
 
   const handleRecordToggle = () => {
     if (speech.isActive) {
@@ -37,22 +89,12 @@ export default function App() {
     speech.start()
   }
 
-  // On narrow screens the diagnosis sits below the form: jump to it when a
-  // request starts and when it settles, so the worker sees progress and the
-  // result. An instant jump is used because smooth scrolling is unreliable.
-  useEffect(() => {
-    if (state.phase === 'idle') return
-    const el = outputRef.current
-    if (!el || window.matchMedia('(min-width: 960px)').matches) return
-    el.scrollIntoView({ block: 'start' })
-  }, [state.phase])
-
   const handleSubmit = () => {
     if (isLoading) return
     // Never keep listening into a diagnosis; text already recognised stays.
     speech.abort()
     cancelAllSpeech()
-    const mError = machineId.trim() ? null : 'Select or enter a machine ID.'
+    const mError = machineId.trim() ? null : MACHINE_REQUIRED
     const qError = question.trim() ? null : 'Describe the issue before diagnosing.'
     setMachineError(mError)
     setQuestionError(qError)
@@ -62,50 +104,54 @@ export default function App() {
     void submit({ question, machineId })
   }
 
+  const autoFocus = hasNavigated.current
+
   return (
     <div className="page">
-      <Header />
+      <a className="skip-link" href="#main">
+        Skip to content
+      </a>
+      <Header route={route} />
 
-      <main className="layout">
-        <div className="layout-input">
-          <Section index="01" title="Machine">
-            <MachineSelect
-              value={machineId}
-              onChange={(id) => {
-                setMachineId(id)
-                if (machineError) setMachineError(null)
-              }}
-              error={machineError}
-              disabled={isLoading}
-            />
-          </Section>
+      <main id="main" className="page-main" tabIndex={-1}>
+        {route === 'equipment' && (
+          <EquipmentPage
+            machineId={machineId}
+            onMachineChange={handleMachineChange}
+            qrMachineId={qrMachineId}
+            error={machineError}
+            onStartDiagnosis={handleStartDiagnosis}
+            autoFocus={autoFocus}
+          />
+        )}
 
-          <Section index="02" title="Issue">
-            <IssueForm
-              value={question}
-              onChange={(q) => {
-                setQuestion(q)
-                if (questionError) setQuestionError(null)
-              }}
-              onSubmit={handleSubmit}
-              isLoading={isLoading}
-              error={questionError}
-              speech={{
-                support: speech.support,
-                status: speech.status,
-                interim: speech.interim,
-                error: speech.error,
-                onToggle: handleRecordToggle,
-              }}
-            />
-          </Section>
-        </div>
+        {route === 'diagnose' && (
+          <DiagnosePage
+            machineId={machineId}
+            machineError={machineError}
+            question={question}
+            onQuestionChange={(q) => {
+              setQuestion(q)
+              if (questionError) setQuestionError(null)
+            }}
+            questionError={questionError}
+            onSubmit={handleSubmit}
+            isLoading={isLoading}
+            speech={{
+              support: speech.support,
+              status: speech.status,
+              interim: speech.interim,
+              error: speech.error,
+              onToggle: handleRecordToggle,
+            }}
+            diagnosis={state}
+            onRetry={() => void retry()}
+            onCancel={cancel}
+            autoFocus={autoFocus}
+          />
+        )}
 
-        <div className="layout-output" ref={outputRef}>
-          <Section index="03" title="Diagnosis">
-            <DiagnosisPanel state={state} onRetry={() => void retry()} onCancel={cancel} />
-          </Section>
-        </div>
+        {route === 'history' && <HistoryPage machineId={machineId} autoFocus={autoFocus} />}
       </main>
 
       <footer className="colophon">
@@ -114,6 +160,8 @@ export default function App() {
           If unsure, stop and call the lead engineer.
         </p>
       </footer>
+
+      <AppNav route={route} variant="bottom" />
     </div>
   )
 }

@@ -39,7 +39,7 @@ beforeEach(() => {
   vi.stubGlobal('SpeechSynthesisUtterance', FakeUtterance)
   vi.stubGlobal('matchMedia', () => ({ matches: false }))
   Element.prototype.scrollIntoView = () => {}
-  window.history.replaceState(null, '', '/?machine=compressor-01')
+  window.history.replaceState(null, '', '/?machine=compressor-01#/diagnose')
 })
 
 afterEach(() => {
