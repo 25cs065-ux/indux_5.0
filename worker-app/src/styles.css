@@ -1,0 +1,250 @@
+/* Mobile-first base styles. Breakpoints only add space for larger screens. */
+
+:root {
+  --color-bg: #f4f6fa;
+  --color-surface: #ffffff;
+  --color-text: #14213d;
+  --color-muted: #55607a;
+  --color-border: #d9dee8;
+  --color-brand: #14213d;
+  --color-accent: #fca311;
+  --color-danger: #c62828;
+  --color-danger-bg: #fdecea;
+  --color-success: #2e7d32;
+  --color-focus: #1565c0;
+
+  --radius: 12px;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --tap-target: 48px;
+
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Noto Sans', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-text-size-adjust: 100%;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0f1522;
+    --color-surface: #182033;
+    --color-text: #e8ecf4;
+    --color-muted: #a4aec4;
+    --color-border: #2b3650;
+    --color-danger-bg: #3a1717;
+    --color-focus: #64b5f6;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--color-bg);
+}
+
+h1, h2, h3, p {
+  margin: 0;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.875em;
+}
+
+/* Layout */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  padding-left: max(var(--space-4), env(safe-area-inset-left));
+  padding-right: max(var(--space-4), env(safe-area-inset-right));
+}
+
+.app-header {
+  padding: var(--space-4) 0;
+  padding-top: max(var(--space-4), env(safe-area-inset-top));
+}
+
+.app-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.app-footer {
+  padding: var(--space-6) 0;
+  padding-bottom: max(var(--space-6), env(safe-area-inset-bottom));
+  color: var(--color-muted);
+  font-size: 0.875rem;
+  display: grid;
+  gap: var(--space-2);
+}
+
+/* Brand */
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--color-brand);
+  color: var(--color-accent);
+  font-weight: 800;
+  font-size: 1.375rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .brand-mark {
+    background: var(--color-accent);
+    color: var(--color-brand);
+  }
+}
+
+.brand-name {
+  font-size: 1.25rem;
+  line-height: 1.2;
+}
+
+.brand-tagline {
+  color: var(--color-muted);
+  font-size: 0.875rem;
+}
+
+/* Hero */
+
+.hero {
+  display: grid;
+  gap: var(--space-4);
+  padding: var(--space-6) var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.hero h2 {
+  font-size: 1.5rem;
+  line-height: 1.25;
+}
+
+.hero p {
+  color: var(--color-muted);
+}
+
+.hint {
+  font-size: 0.875rem;
+  text-align: center;
+}
+
+/* Cards */
+
+.feature-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.card {
+  padding: var(--space-4);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.card h3 {
+  font-size: 1rem;
+  margin-bottom: var(--space-1);
+}
+
+.card p {
+  color: var(--color-muted);
+  font-size: 0.9375rem;
+}
+
+/* Buttons: large tap targets for gloved hands. */
+
+.btn {
+  min-height: var(--tap-target);
+  padding: var(--space-3) var(--space-6);
+  border: 2px solid transparent;
+  border-radius: var(--radius);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: var(--color-accent);
+  color: #14213d;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.dev-note code {
+  word-break: break-all;
+}
+
+/* Larger screens */
+
+@media (min-width: 640px) {
+  .app {
+    padding-left: var(--space-8);
+    padding-right: var(--space-8);
+  }
+
+  .hero {
+    padding: var(--space-8);
+  }
+
+  .hero h2 {
+    font-size: 1.875rem;
+  }
+
+  .feature-list {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
