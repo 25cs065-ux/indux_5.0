@@ -103,8 +103,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help=(
-            "Extract and embed but do NOT write to Supabase. "
-            "Use this to test without database credentials."
+            "Extract text and report chunk counts only. "
+            "Makes zero Gemini API calls and zero database writes."
         ),
     )
     parser.add_argument(
@@ -136,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
 
     from ingest.pdf_ingestor import ingest_pdf, IngestError
 
-    logger.info("Step 1/3 — Extracting text from '%s' …", pdf_path)
+    logger.info("Step 1/3 -- Extracting text from '%s' ...", pdf_path)
     try:
         result = ingest_pdf(
             pdf_path,
@@ -168,11 +168,30 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     # ------------------------------------------------------------------
+    # Step 2 — Dry-run exits here (no Gemini calls, no DB writes)
+    # ------------------------------------------------------------------
+    if args.dry_run:
+        _print_warning(
+            "--dry-run mode: extraction complete.  "
+            f"Would embed and save {len(result.chunks)} chunks.  "
+            "No Gemini API calls and no database writes were made."
+        )
+        elapsed = time.monotonic() - t_start
+        print(f"\n* Done in {elapsed:.1f}s  --  {len(result.chunks)} chunks extracted (dry-run).")
+        print(f"  Extractor : {result.extractor_used}")
+        print(f"  doc_id    : {result.doc_id}")
+        print(f"  Pages     : {result.total_pages}")
+        if result.empty_pages:
+            print(f"  Blank pgs : {result.empty_pages}")
+        print()
+        return 0
+
+    # ------------------------------------------------------------------
     # Step 2 — Embed
     # ------------------------------------------------------------------
     from ingest.embedder import embed_chunks, EmbeddingError
 
-    logger.info("Step 2/3 — Embedding %d chunks …", len(result.chunks))
+    logger.info("Step 2/3 — Embedding %d chunks ...", len(result.chunks))
     try:
         embeddings = embed_chunks(
             result.chunks,
@@ -187,29 +206,23 @@ def main(argv: list[str] | None = None) -> int:
         return 4
 
     # ------------------------------------------------------------------
-    # Step 3 — Save to Supabase (skipped in dry-run mode)
+    # Step 3 — Save to Supabase
     # ------------------------------------------------------------------
     from ingest.storage import save_chunks, StorageError
 
-    if args.dry_run:
-        _print_warning(
-            "--dry-run mode: skipping Supabase write.  "
-            f"Would have saved {len(result.chunks)} chunks."
-        )
-    else:
-        logger.info("Step 3/3 — Saving %d chunks to Supabase …", len(result.chunks))
-        try:
-            saved = save_chunks(result.chunks, embeddings)
-            logger.info("Saved %d rows to Supabase.", saved)
-        except StorageError as exc:
-            _print_error("DATABASE ERROR", str(exc))
-            return 3
-        except Exception as exc:  # noqa: BLE001
-            _print_error("UNEXPECTED ERROR during save", str(exc))
-            return 4
+    logger.info("Step 3/3 — Saving %d chunks to Supabase ...", len(result.chunks))
+    try:
+        saved = save_chunks(result.chunks, embeddings)
+        logger.info("Saved %d rows to Supabase.", saved)
+    except StorageError as exc:
+        _print_error("DATABASE ERROR", str(exc))
+        return 3
+    except Exception as exc:  # noqa: BLE001
+        _print_error("UNEXPECTED ERROR during save", str(exc))
+        return 4
 
     elapsed = time.monotonic() - t_start
-    print(f"\n✓ Done in {elapsed:.1f}s  —  {len(result.chunks)} chunks ingested.")
+    print(f"\n* Done in {elapsed:.1f}s  --  {len(result.chunks)} chunks ingested.")
     print(f"  Extractor : {result.extractor_used}")
     print(f"  doc_id    : {result.doc_id}")
     print(f"  Pages     : {result.total_pages}")
@@ -237,14 +250,14 @@ def _print_result_summary(result: object) -> None:
 
 
 def _print_error(title: str, message: str) -> None:
-    print(f"\n✗ {title}:", file=sys.stderr)
+    print(f"\nERROR - {title}:", file=sys.stderr)
     for line in message.splitlines():
         print(f"    {line}", file=sys.stderr)
     print(file=sys.stderr)
 
 
 def _print_warning(message: str) -> None:
-    print(f"\n⚠  {message}\n")
+    print(f"\nWARNING: {message}\n")
 
 
 # ---------------------------------------------------------------------------

@@ -103,7 +103,7 @@ def embed_chunks(
     client = _get_genai_client(api_key)
 
     logger.info(
-        "Embedding %d chunks with Gemini model '%s' …",
+        "Embedding %d chunks with Gemini model '%s' ...",
         len(chunks),
         resolved_model,
     )
@@ -124,7 +124,7 @@ def embed_chunks(
             ) from exc
 
         if (i + 1) % 50 == 0:
-            logger.info("  … embedded %d / %d chunks", i + 1, len(chunks))
+            logger.info("  ... embedded %d / %d chunks", i + 1, len(chunks))
 
     logger.info(
         "Embedding complete. %d vectors, dimension %d.",

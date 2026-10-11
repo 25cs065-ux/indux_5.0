@@ -150,7 +150,7 @@ def save_chunks(
         ]
 
         logger.info(
-            "Upserting rows %d–%d into '%s' …",
+            "Upserting rows %d-%d into '%s' ...",
             batch_start + 1,
             batch_start + len(rows),
             table,

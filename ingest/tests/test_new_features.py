@@ -664,20 +664,15 @@ class TestRunIngestCLI:
         return f
 
     def test_dry_run_succeeds_without_db_credentials(self, tmp_path, monkeypatch):
-        """--dry-run should pass even with no SUPABASE_URL/KEY set."""
-        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        """--dry-run should pass with no SUPABASE_URL/KEY and no Gemini key."""
+        # dry-run must make zero Gemini API calls and zero DB writes.
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("SUPABASE_URL", raising=False)
+        monkeypatch.delenv("SUPABASE_KEY", raising=False)
         pdf_file = self._write_pdf(tmp_path)
 
-        # Build a mock Gemini client that returns 3072-dim vectors
-        fake_values = [0.1] * 3072
-        mock_emb = MagicMock(); mock_emb.values = fake_values
-        mock_resp = MagicMock(); mock_resp.embeddings = [mock_emb]
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_resp
-
-        with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            from ingest.run_ingest import main
-            rc = main([str(pdf_file), "--dry-run"])
+        from ingest.run_ingest import main
+        rc = main([str(pdf_file), "--dry-run"])
 
         assert rc == 0
 
@@ -705,21 +700,14 @@ class TestRunIngestCLI:
         assert rc == 2
 
     def test_storage_error_returns_exit_code_3(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        """--dry-run exits before embedding and storage, always returns 0."""
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        monkeypatch.delenv("SUPABASE_URL", raising=False)
+        monkeypatch.delenv("SUPABASE_KEY", raising=False)
         pdf_file = self._write_pdf(tmp_path)
-        fake_values = [0.1] * 3072
-        mock_emb = MagicMock(); mock_emb.values = fake_values
-        mock_resp = MagicMock(); mock_resp.embeddings = [mock_emb]
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_resp
-        with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            with patch("ingest.storage.save_chunks", side_effect=StorageError("DB down")):
-                from ingest.run_ingest import main
-                rc = main([
-                    str(pdf_file),
-                    "--dry-run",  # dry-run skips storage → exit 0
-                ])
-        # dry-run skips storage, so exit should be 0
+        from ingest.run_ingest import main
+        rc = main([str(pdf_file), "--dry-run"])
+        # dry-run exits before embedding or storage — always 0
         assert rc == 0
 
     def test_storage_error_without_dry_run_returns_3(self, tmp_path, monkeypatch):
@@ -737,14 +725,9 @@ class TestRunIngestCLI:
         assert rc == 3
 
     def test_doc_id_flag_is_passed_through(self, tmp_path, monkeypatch):
-        """--doc-id should be visible in the result."""
-        monkeypatch.setenv("GEMINI_API_KEY", "fake-key")
+        """--doc-id should be visible in the result; dry-run needs no Gemini key."""
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
         pdf_file = self._write_pdf(tmp_path)
-        fake_values = [0.1] * 3072
-        mock_emb = MagicMock(); mock_emb.values = fake_values
-        mock_resp = MagicMock(); mock_resp.embeddings = [mock_emb]
-        mock_client = MagicMock()
-        mock_client.models.embed_content.return_value = mock_resp
 
         captured_result = {}
         original_ingest = ingest_pdf
@@ -754,9 +737,24 @@ class TestRunIngestCLI:
             captured_result["doc_id"] = result.doc_id
             return result
 
-        with patch("ingest.embedder._get_genai_client", return_value=mock_client):
-            with patch("ingest.pdf_ingestor.ingest_pdf", side_effect=capturing_ingest):
-                from ingest.run_ingest import main
-                main([str(pdf_file), "--doc-id", "my_manual_v1", "--dry-run"])
+        with patch("ingest.pdf_ingestor.ingest_pdf", side_effect=capturing_ingest):
+            from ingest.run_ingest import main
+            main([str(pdf_file), "--doc-id", "my_manual_v1", "--dry-run"])
 
         assert captured_result.get("doc_id") == "my_manual_v1"
+
+    def test_dry_run_makes_zero_gemini_calls(self, tmp_path, monkeypatch):
+        """Regression: --dry-run must never call the Gemini embedding API."""
+        monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+        pdf_file = self._write_pdf(tmp_path)
+
+        mock_client = MagicMock()
+
+        with patch("ingest.embedder._get_genai_client", return_value=mock_client) as mock_get:
+            from ingest.run_ingest import main
+            rc = main([str(pdf_file), "--dry-run"])
+
+        assert rc == 0
+        # _get_genai_client must never have been called
+        mock_get.assert_not_called()
+        mock_client.models.embed_content.assert_not_called()

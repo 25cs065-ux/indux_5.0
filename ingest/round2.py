@@ -113,7 +113,7 @@ def save_page_images(
 
     for pn in page_numbers:
         if not (1 <= pn <= total):
-            logger.warning("Page %d out of range (1–%d) — skipped.", pn, total)
+            logger.warning("Page %d out of range (1-%d) -- skipped.", pn, total)
             continue
         page = doc[pn - 1]
         clip = page.get_pixmap(matrix=mat)
@@ -232,7 +232,7 @@ def describe_pages(
                     wait = delay * (2 ** attempt)
                     logger.warning(
                         "Rate limit / server error for '%s' (attempt %d/%d). "
-                        "Retrying in %.1fs …",
+                        "Retrying in %.1fs ...",
                         image_path.name, attempt, max_retries, wait,
                     )
                     time.sleep(wait)
