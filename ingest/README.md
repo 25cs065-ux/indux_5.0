@@ -33,12 +33,12 @@ Admin uploads PDF
          │
          ▼
 ┌─────────────────────┐
-│  Batch embed         │  ← sentence-transformers (local, no API key)
+│  Batch embed         │  ← Gemini API (gemini-embedding-001, 3072-dim)
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
-│  Upsert to Supabase  │  ← idempotent (on_conflict=chunk_id)
+│  Upsert to Supabase  │  ← idempotent (on_conflict=id)
 └─────────────────────┘
 ```
 
@@ -49,7 +49,7 @@ Admin uploads PDF
 | File | Purpose |
 |---|---|
 | `pdf_ingestor.py` | Core extraction + chunking logic |
-| `embedder.py` | Batch embedding generation (sentence-transformers) |
+| `embedder.py` | Batch embedding generation (Gemini `gemini-embedding-001`, 3072-dim) |
 | `storage.py` | Supabase persistence layer |
 | `run_ingest.py` | **One-command CLI entry point** |
 | `__init__.py` | Package entry point; re-exports the public API |
@@ -68,50 +68,25 @@ Admin uploads PDF
 py -m pip install -r ingest/requirements.txt
 ```
 
-> **First run note:** `sentence-transformers` downloads the `all-MiniLM-L6-v2`
-> model (~22 MB) on first use. After that it's cached locally.
+> **First run note:** ingestion calls the Gemini API (`gemini-embedding-001`) for
+> each chunk, so `GEMINI_API_KEY` must be set and you need an internet connection.
 
 ### 2. Set environment variables
 
 ```powershell
-$env:SUPABASE_URL = "https://your-project-id.supabase.co"
-$env:SUPABASE_KEY = "eyJhbGciOi..."    # service-role key (NOT anon)
-```
-
-Optional:
-```powershell
-$env:EMBED_MODEL  = "all-MiniLM-L6-v2"   # default; change to any HuggingFace model
+$env:SUPABASE_URL   = "https://your-project-id.supabase.co"
+$env:SUPABASE_KEY   = "eyJhbGciOi..."    # service-role key (NOT anon)
+$env:GEMINI_API_KEY = "AIza..."          # Google AI Studio key (required for embedding)
 ```
 
 ### 3. Create the Supabase table (once)
 
-Run this SQL in your Supabase project's **SQL Editor**:
+Run `ingest/schema.sql` in your Supabase project's **SQL Editor**
+(Dashboard → SQL Editor → New query → paste → Run).
 
-```sql
--- Enable pgvector (only needed once per project)
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Chunks table
-CREATE TABLE IF NOT EXISTS document_chunks (
-  chunk_id      TEXT PRIMARY KEY,
-  doc_id        TEXT NOT NULL,
-  page_number   INTEGER NOT NULL,
-  chunk_index   INTEGER NOT NULL,
-  chunk_type    TEXT NOT NULL DEFAULT 'text',
-  text          TEXT NOT NULL,
-  embedding     VECTOR(384),
-  bbox_x0       REAL,
-  bbox_y0       REAL,
-  bbox_x1       REAL,
-  bbox_y1       REAL,
-  ingested_at   TIMESTAMPTZ DEFAULT now()
-);
-
--- Optional: index for fast similarity search
-CREATE INDEX IF NOT EXISTS chunks_embedding_idx
-  ON document_chunks USING ivfflat (embedding vector_cosine_ops)
-  WITH (lists = 100);
-```
+The schema creates:
+- `public.manual_chunks` — stores chunks with `VECTOR(3072)` embeddings
+- `public.match_manual_chunks` RPC — used by `ai/brain.py` for similarity search
 
 ### 4. Run ingestion
 
@@ -138,7 +113,7 @@ py ingest/run_ingest.py path/to/manual.pdf --dry-run --verbose
 py -m pytest ingest/tests/ -v
 ```
 
-Expected: **73 passed**.
+Expected: **98 passed**.
 
 ---
 
@@ -231,43 +206,44 @@ All values in PDF points (1 pt = 1/72 inch):
 
 ## Supabase schema reference
 
+The authoritative schema is in `ingest/schema.sql`. Key points:
+
 ```sql
-CREATE TABLE document_chunks (
-  chunk_id      TEXT PRIMARY KEY,
-  doc_id        TEXT NOT NULL,
-  page_number   INTEGER NOT NULL,
-  chunk_index   INTEGER NOT NULL,
-  chunk_type    TEXT NOT NULL DEFAULT 'text',
-  text          TEXT NOT NULL,
-  embedding     VECTOR(384),
-  bbox_x0       REAL,
-  bbox_y0       REAL,
-  bbox_x1       REAL,
-  bbox_y1       REAL,
-  ingested_at   TIMESTAMPTZ DEFAULT now()
-);
+-- Table: public.manual_chunks
+-- Column names used by ai/brain.py (retrieval) and ingest/storage.py (writes):
+--   id            TEXT PRIMARY KEY   -- "{doc_id}_{chunk_index:05d}"
+--   content       TEXT               -- chunk text
+--   manual_title  TEXT               -- doc_id passed to ingest_pdf()
+--   page_number   INTEGER            -- 1-based page
+--   section       TEXT               -- chunk_type ("text" / "troubleshooting_row" / "safety")
+--   chunk_index   INTEGER
+--   embedding     VECTOR(3072)       -- gemini-embedding-001 output
+--   bbox_x0/y0/x1/y1  REAL
+--   ingested_at   TIMESTAMPTZ
 ```
 
-> If you switch to a larger embedding model, update the `VECTOR(384)` dimension
-> to match your model's output (e.g. `VECTOR(768)` for `all-mpnet-base-v2`).
+> The embedding dimension is **3072**, produced by `gemini-embedding-001`.
+> Both `ingest/embedder.py` and `ai/brain.py` use the same model.
+> Do not change the dimension without re-ingesting all manuals.
 
 ---
 
 ## Integration with the rest of the project
 
-The retrieval system in `ai/` should query the `document_chunks` table using
-pgvector similarity search:
+`ai/brain.py` calls the `match_manual_chunks` RPC (defined in `ingest/schema.sql`):
 
-```sql
-SELECT chunk_id, doc_id, page_number, chunk_type, text,
-       1 - (embedding <=> $1::vector) AS similarity
-FROM document_chunks
-ORDER BY embedding <=> $1::vector
-LIMIT 5;
+```python
+supabase.rpc("match_manual_chunks", {
+    "query_embedding": <list of 3072 floats>,
+    "match_count": 5
+}).execute()
 ```
 
+Each returned row has: `id`, `content`, `manual_title`, `page_number`, `section`, `distance`.
+`brain.py` filters results to `distance <= 0.65` (cosine distance cutoff).
+
 Each chunk carries `page_number` so answers can cite **"See page N"**, and
-`bbox_*` coordinates so a future highlight helper can draw boxes on the PDF.
+`bbox_*` coordinates so the highlight helper (`ingest/round2.py`) can draw boxes on the PDF.
 
 ---
 
