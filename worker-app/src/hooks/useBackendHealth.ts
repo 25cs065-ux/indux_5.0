@@ -32,8 +32,18 @@ export function useBackendHealth() {
     return () => controller.current?.abort()
   }, [recheck])
 
-  const markOnline = useCallback(() => setStatus('online'), [])
-  const markOffline = useCallback(() => setStatus('offline'), [])
+  // A real request outcome is newer than any health check still in flight,
+  // so cancel that check rather than let its older answer overwrite this one.
+  const markOnline = useCallback(() => {
+    controller.current?.abort()
+    controller.current = null
+    setStatus('online')
+  }, [])
+  const markOffline = useCallback(() => {
+    controller.current?.abort()
+    controller.current = null
+    setStatus('offline')
+  }, [])
 
   return { status, recheck, markOnline, markOffline }
 }

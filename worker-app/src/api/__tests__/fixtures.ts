@@ -120,3 +120,21 @@ export function parseFailureAnswer() {
     search_score: 0.41,
   }
 }
+
+// ---- GET /history/{machine_id} (test-only mock data, not real records) ----
+
+export function historyRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'a1',
+    machine_id: 'compressor-01',
+    problem: 'TEST: High temperature warning',
+    action: 'TEST: Cleaned cooler fins',
+    outcome: 'TEST: Resolved',
+    created_at: '2026-05-06T09:30:00+00:00',
+    ...overrides,
+  }
+}
+
+export function historyEnvelope(history: unknown, machineId = 'compressor-01') {
+  return { status: 'success', machine_id: machineId, history }
+}

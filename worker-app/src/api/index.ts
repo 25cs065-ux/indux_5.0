@@ -1,4 +1,6 @@
-export { askQuestion, getHealth, ASK_TIMEOUT_MS, HEALTH_TIMEOUT_MS } from './client.ts'
+export { askQuestion, getHealth, getRepairHistory, ASK_TIMEOUT_MS, HEALTH_TIMEOUT_MS, HISTORY_TIMEOUT_MS } from './client.ts'
+export { HISTORY_LIMIT, parseRepairHistory } from './history.ts'
+export type { RepairHistoryResult, RepairRecord } from './history.ts'
 export type { RequestOptions } from './client.ts'
 export { ApiError, isApiError } from './errors.ts'
 export type { ApiErrorKind } from './errors.ts'

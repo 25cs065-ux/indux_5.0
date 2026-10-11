@@ -54,3 +54,21 @@ describe('useBackendHealth', () => {
     expect(result.current.status).toBe('online')
   })
 })
+
+describe('useBackendHealth ordering', () => {
+  it('a real request outcome is not overwritten by an older health check still in flight', async () => {
+    let releaseHealth: (r: Response) => void = () => {}
+    fetchMock.mockImplementation(
+      (_i, init) =>
+        new Promise<Response>((resolve, reject) => {
+          releaseHealth = resolve
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')))
+        }),
+    )
+    const { result } = renderHook(() => useBackendHealth())
+    expect(result.current.status).toBe('checking')
+    act(() => result.current.markOffline())
+    await act(async () => releaseHealth(jsonResponse({ status: 'ok' })))
+    expect(result.current.status).toBe('offline')
+  })
+})

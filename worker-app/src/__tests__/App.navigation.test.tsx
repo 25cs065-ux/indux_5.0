@@ -281,13 +281,3 @@ describe('state across pages', () => {
     expect(screen.queryByRole('list', { name: 'Troubleshooting steps' })).toBeNull()
   })
 })
-
-describe('History page (placeholder)', () => {
-  it('shows no records and says the feature is not available yet', () => {
-    setUrl('/?machine=compressor-01#/history')
-    render(<App />)
-    expect(screen.getByText('Not available yet')).toBeTruthy()
-    expect(screen.queryAllByRole('listitem').filter((li) => li.closest('.page-main'))).toHaveLength(0)
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/history'))).toBe(false)
-  })
-})

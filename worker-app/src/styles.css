@@ -1998,3 +1998,128 @@ fieldset {
     justify-self: end;
   }
 }
+
+/* ---------- Repair history ---------- */
+
+.history-disclaimer {
+  display: grid;
+  gap: var(--s-1);
+  margin-top: var(--s-4);
+  padding: var(--s-3) var(--s-4);
+  border: 1px dashed var(--ink-3);
+  color: var(--ink-2);
+  font-size: 0.9375rem;
+}
+
+.history-disclaimer-code {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+
+.history-body {
+  padding: var(--s-5) 0 var(--s-6);
+}
+
+.history-state {
+  display: grid;
+  gap: var(--s-2);
+  justify-items: start;
+  padding: var(--s-4) 0;
+}
+
+.history-state-title {
+  font-size: 1.5rem;
+  font-weight: 300;
+}
+
+.history-state-text {
+  color: var(--ink-2);
+}
+
+.history-state-action {
+  margin-top: var(--s-2);
+  text-decoration: none;
+}
+
+.history-count {
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-bottom: var(--s-2);
+}
+
+.history-issues {
+  margin-bottom: var(--s-3);
+  padding-left: var(--s-3);
+  border-left: 3px solid var(--signal);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+
+.logbook {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--ink);
+}
+
+.logbook-entry {
+  display: grid;
+  gap: var(--s-2);
+  padding: var(--s-4) 0;
+  border-bottom: 1px solid var(--rule);
+}
+
+.logbook-date {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-2);
+}
+
+.logbook-fields {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.logbook-field {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: var(--s-3);
+}
+
+.logbook-field dt {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding-top: 3px;
+}
+
+.logbook-field dd {
+  overflow-wrap: anywhere;
+}
+
+.logbook-missing {
+  color: var(--ink-3);
+  font-style: italic;
+}
+
+@media (min-width: 960px) {
+  .logbook-entry {
+    grid-template-columns: 12rem 1fr;
+    column-gap: var(--s-6);
+  }
+
+  .history-body {
+    max-width: 920px;
+  }
+
+  .history-disclaimer {
+    max-width: 920px;
+  }
+}

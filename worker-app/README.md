@@ -61,7 +61,7 @@ the canonical format (`compressor-01` vs `compressor_01`).
 |---|---|---|
 | `#/equipment` (default) | Equipment | Machine selection or ID entry, details from the site machine list only (`src/data/machines.ts`, a copy of `docs/lists/machines.json`), "Selected from QR code" tag, Start diagnosis |
 | `#/diagnose` | Diagnose | Machine bar, voice-enabled issue form, diagnosis report |
-| `#/history` | Repair history | Placeholder only: no records are shown until the read-only history page is built |
+| `#/history` | Repair history | Read-only records from `GET /history/{machine_id}` |
 
 - Hash routes work on any static host and keep the `?machine=` query from QR
   links. A QR link opens Equipment with the machine preselected; the worker
@@ -95,6 +95,34 @@ error, or 502/504 from a gateway or the dev proxy), the header shows
 **Unreachable** and the Diagnose page shows a **Server unreachable** notice
 with **Check again**. Typing and recording still work. A successful answer
 clears the notice.
+
+## Repair history (`src/api/history.ts`, `src/hooks/useRepairHistory.ts`)
+
+Contract (`backend/main.py`): `GET /history/{machine_id}` returns
+`{ status: "success", machine_id, history: [...] }`, rows from the Supabase
+`repair_history` table filtered by exact `machine_id`, newest first by
+`created_at`, at most 50. Failure: 503 `{ detail: "Could not retrieve repair
+history." }`. The repo has no table definition, so only the fields the
+backend itself writes or orders by are read: `problem`, `action`, `outcome`,
+`created_at` (and `id` as a key). Other columns are ignored.
+
+- Shows only returned rows, in backend order. Rows for another machine, rows
+  that are not objects, and rows with no problem, action or outcome are
+  dropped (noted, never shown).
+- Missing or empty fields display as "Not recorded" / "Date not recorded";
+  nothing is filled in. `created_at` is shown in local time with the raw value
+  in `<time datetime>`.
+- Labelled "Site records · Context only: historical maintenance records, not
+  verified manufacturer instructions".
+- States: no machine selected, loading, empty, error with Retry (one request
+  even if pressed twice), and "showing the 50 most recent" at the limit.
+- Changing machine or leaving the page cancels the outstanding request; a late
+  reply for an earlier machine is never shown.
+- Read-only: `POST /history` is not used.
+
+**Verification status:** the parser, hook and page are tested with mock
+responses only. Against the real backend only the unreachable path (502 from
+the dev proxy) has been exercised; real Supabase rows have not been seen.
 
 ## API layer (`src/api/`)
 
@@ -305,7 +333,7 @@ internet.
 6. ✅ Read Aloud / Stop Speaking (speechSynthesis), following the on-screen safety gating
 7. ✅ (Stage B) Three-page navigation and Equipment page
    ✅ (Stage C) Diagnose workflow: New question, Retry, server-unreachable notice
-8. Read-only repair history page
+8. ✅ (Stage D) Read-only repair history page
 9. Polish, accessibility, deployment
 
 ### Automated testing (added in later stages)

@@ -177,7 +177,14 @@ export default function App() {
           />
         )}
 
-        {route === 'history' && <HistoryPage machineId={machineId} autoFocus={autoFocus} />}
+        {route === 'history' && (
+          <HistoryPage
+            machineId={machineId}
+            autoFocus={autoFocus}
+            onReachable={markOnline}
+            onUnreachable={markOffline}
+          />
+        )}
       </main>
 
       <footer className="colophon">

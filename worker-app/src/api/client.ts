@@ -1,5 +1,7 @@
 import { apiUrl } from '../config.ts'
 import { ApiError } from './errors.ts'
+import { parseRepairHistory } from './history.ts'
+import type { RepairHistoryResult } from './history.ts'
 import { parseAskResponse } from './parse.ts'
 import type { AskRequest, AskResult, ErrorResponseWire, HealthResult } from './types.ts'
 
@@ -132,4 +134,21 @@ export async function getHealth(options: RequestOptions = {}): Promise<HealthRes
       ? (body as { status: string }).status
       : 'unknown'
   return { ok: status === 'ok', status }
+}
+
+export const HISTORY_TIMEOUT_MS = 15_000
+
+/**
+ * GET /history/{machine_id}. Read-only. The machine ID is sent exactly as
+ * given (URL-encoded, never normalized).
+ */
+export async function getRepairHistory(machineId: string, options: RequestOptions = {}): Promise<RepairHistoryResult> {
+  if (!machineId.trim()) throw new ApiError('validation', 'Select a machine to see its repair history.')
+  const body = await requestJson(
+    `/history/${encodeURIComponent(machineId)}`,
+    { method: 'GET' },
+    options,
+    HISTORY_TIMEOUT_MS,
+  )
+  return parseRepairHistory(body, machineId)
 }
