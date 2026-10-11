@@ -1,80 +1,49 @@
-@'
-# API JSON Format (LOCKED)
+# INDUX 5.0 — Locked JSON Schema Contract
 
-Endpoint: `POST /ask`
+All AI responses from `/ask` adhere strictly to this schema (`ai/schemas.py`).
+**Rule:** Arrays are always `[]`, never `null`.
 
-Request body:
-```json
-{"question": "Compressor is overheating what should I check", "machine_id": "compressor-01"}
-```
+## Schema Fields
 
-## Response shape
+| Field | Type | Description |
+|---|---|---|
+| `status` | string | `"SUCCESS"`, `"NOT_FOUND"`, or `"SAFETY_ALERT"` |
+| `problem_type` | string | `'overheating'`, `'low pressure'`, `'oil leak'`, `'electrical'`, `'noise'`, `'belt'`, `'general'` |
+| `summary` | string | Brief 1-2 sentence overview of the diagnosis |
+| `safety_checklist` | list[string] | Mandatory safety actions (LOTO, depressurization). Empty `[]` if safe. |
+| `steps` | list[object] | Ordered repair steps with verification checks. Empty `[]` on `NOT_FOUND`. |
+| `sources` | list[object] | Exact manual citations. Empty `[]` on `NOT_FOUND`. |
+| `escalate` | boolean | `true` if issue cannot be resolved via manual or requires lead engineer. |
+| `search_score` | float \| null | Best chunk vector distance (lower is closer; `0.0` for exact matches). |
 
-The response has an outer wrapper. The actual answer is inside `answer`.
+---
 
-```json
-{
-  "status": "success",
-  "machine_id": "compressor-01",
-  "question": "Compressor is overheating what should I check",
-  "answer": {
-    "status": "NOT_FOUND",
-    "problem_type": "other",
-    "summary": "",
-    "is_dangerous": false,
-    "safety_checklist": [],
-    "history_note": "",
-    "steps": [],
-    "sources": [],
-    "escalate": true
-  },
-  "is_demo": false
-}
-```
-
-## Reading the response (for the worker app)
-
-- Read `answer.status`. The outer `status` only says the request worked.
-- `answer.status` is `OK` or `NOT_FOUND`.
-- If `NOT_FOUND`, show the "Escalate to lead engineer" screen (`answer.escalate` is true).
-- If `answer.is_dangerous` is true, show the safety checklist and lock the steps until every box is ticked.
-- `machine_id` is in the outer wrapper, not inside `answer`.
-
-## Example: OK answer
-
+## Example 1: `SUCCESS` (Standard Fix)
 ```json
 {
-  "status": "success",
-  "machine_id": "compressor-01",
-  "question": "What is the maximum working pressure of the GA 22",
-  "answer": {
-    "status": "OK",
-    "problem_type": "other",
-    "summary": "(short summary)",
-    "is_dangerous": false,
-    "safety_checklist": [],
-    "history_note": "",
-    "steps": [
-      {"step_no": 1, "instruction": "(step text)", "check_question": "(yes/no question)"}
-    ],
-    "sources": [{"manual": "GA15-26_Datasheet", "page": 1}],
-    "escalate": false
-  },
-  "is_demo": false
+  "status": "SUCCESS",
+  "problem_type": "low pressure",
+  "summary": "Intake air filter is clogged causing insufficient pressure build-up.",
+  "safety_checklist": [],
+  "steps": [
+    {
+      "step_number": 1,
+      "instruction": "Inspect intake air filter cartridge for dust accumulation.",
+      "check_question": "Is the filter cartridge clogged with debris?"
+    },
+    {
+      "step_number": 2,
+      "instruction": "Clean cartridge with compressed air or replace if saturated.",
+      "check_question": "Is the replacement cartridge seated securely in the housing?"
+    }
+  ],
+  "sources": [
+    {
+      "manual_title": "Industrial Compressor SOP Manual",
+      "page_number": 8,
+      "section": "Pressure System"
+    }
+  ],
+  "escalate": false,
+  "search_score": 0.312
 }
-```
-
-(Check the exact field names inside `steps` and `sources` against a real response before relying on this example.)
-
-## Rules
-
-- Lists (`steps`, `sources`, `safety_checklist`) are always `[]`, never null or missing.
-- Strings are never null. Use `""`. `problem_type` is never null; use `"other"` if unsure.
-- `answer.status` is only `OK` or `NOT_FOUND`.
-- The flag is `escalate` (not `escalate_to_engineer`).
-- Machine ids use hyphens: `compressor-01`, `compressor-02`.
-- Manual names have no `` extension (they match `manual_title` in Supabase): `GA15-26_Datasheet`, `GA15-26_Instruction_Book`, `Compressed_Air_Manual`.
-- `page` is a number (the PDF page number).
-- `problem_type` comes from `docs/lists/problem-types.json`.
-- The live safety rules are in `ai/brain.py`. `docs/safety-rules.json` is the reference list; keep both in sync.
-'@ | Set-Content -Path docs\json-format.md -Encoding UTF8

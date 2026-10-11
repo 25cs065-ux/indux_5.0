@@ -181,6 +181,9 @@ OUTPUT RULES:
         if safety_items:
             existing = parsed_data.get("safety_checklist", [])
             parsed_data["safety_checklist"] = list(dict.fromkeys(existing + safety_items))
+# If safety items were triggered, change status to SAFETY_ALERT
+            if parsed_data.get("status") == "SUCCESS":
+                parsed_data["status"] = "SAFETY_ALERT"
         return parsed_data
     except Exception as e:
         return QueryResponse(
