@@ -1,7 +1,10 @@
 # Indux Assistant — Worker App
 
-Mobile-first web app that lets a technician ask the Indux backend for
-air-compressor troubleshooting help. Built with React + TypeScript + Vite.
+Mobile-first web app for maintenance technicians working on air compressors.
+Three pages: **Equipment** (identify the machine), **Diagnose** (typed or
+spoken question, AI answer with safety gating, manual references, read aloud)
+and **Repair history** (read-only site records). Built with React +
+TypeScript + Vite.
 
 This folder is the frontend only. The FastAPI backend lives in `../backend`
 and is owned by another team member.
@@ -9,7 +12,9 @@ and is owned by another team member.
 ## Requirements
 
 - Node.js 20.19+ (tested with Node 25)
-- The backend running locally (default `http://localhost:8000`) for API calls
+- The FastAPI backend (`../backend`) running for real answers; default
+  `http://localhost:8000`. Without it the app runs and clearly reports
+  "Server unreachable".
 
 ## Setup
 
@@ -313,7 +318,8 @@ load the page but the mic will be blocked. Options, in order of preference:
    CA on the test phone, and serve Vite over HTTPS with that certificate.
    Certificates go in `worker-app/certs/`, which is git-ignored. Never commit
    certificates or private keys, and remove the root CA from the phone after
-   testing. (Wiring this into `vite.config.ts` will happen in a later stage.)
+   testing. (Not configured in `vite.config.ts`; add a local `server.https`
+   setting on your machine only if you use this option.)
 3. **Vercel preview deployment.** Every push gets an HTTPS URL. Set
    `VITE_API_BASE_URL` in the Vercel project to the backend's HTTPS URL. The
    backend must also be reachable over HTTPS, because browsers block HTTP API
@@ -323,28 +329,95 @@ Avoid public tunnels (ngrok, Cloudflare Tunnel) unless needed. If you use one,
 keep it short-lived, because it exposes the dev server and backend to the
 internet.
 
-## Roadmap
+## Testing
 
-1. ✅ Scaffold: Vite + React + TS, env config, mobile-first styles, start screen
-2. ✅ API layer: typed client for `/ask` and `/health`, error handling (503, 422, network, timeout), response validation, tests
-3. ✅ Worker interface: machine selection or entry, editable question, Diagnose via `/ask`, loading, error and retry states, safety state notice (no steps shown yet)
-4. ✅ Diagnosis view: safety checklist with per-item acknowledgement before steps on flagged answers (summary, escalation and references always visible), numbered steps with check questions, manual references, distinct NOT_FOUND block, repair history shown separately as context, incomplete-response notice
-5. ✅ Speech-to-text (Web Speech API): Record / Stop recording, listening indicator, interim text, editable transcript, no auto-submit, error handling; sent via `/ask` only when Diagnose is pressed
-6. ✅ Read Aloud / Stop Speaking (speechSynthesis), following the on-screen safety gating
-7. ✅ (Stage B) Three-page navigation and Equipment page
-   ✅ (Stage C) Diagnose workflow: New question, Retry, server-unreachable notice
-8. ✅ (Stage D) Read-only repair history page
-9. Polish, accessibility, deployment
+```bash
+npm run typecheck
+npm test
+npm run build
+```
 
-### Automated testing (added in later stages)
+Vitest + React Testing Library. The network, microphone and speech engine
+are replaced by test doubles; **all API responses in tests are mocks** and
+live only in `__tests__` folders (`src/api/__tests__/fixtures.ts`; history
+rows are prefixed `TEST:`). Nothing in the production bundle contains mock
+answers or records.
 
-Vitest + React Testing Library, with the backend mocked at the `fetch` level:
+Coverage includes: legacy and current `/ask` formats (`SUCCESS`,
+`SAFETY_ALERT`, `NOT_FOUND`, internal errors, malformed and incomplete
+bodies); safety gating on screen and in read-aloud; machine selection and QR
+parameters; navigation and state across pages; voice recognition lifecycle,
+duplicate results and errors; read-aloud playback and stopping; duplicate
+submissions, Cancel, Retry and New question; backend unavailable; repair
+history parsing, states, machine changes and stale requests; cancellation and
+timeouts even when `fetch` never settles; and automated accessibility checks
+(axe-core) on every page and key state.
 
-- **API:** request body shape for `/ask`, success-envelope parsing, 503 and 422
-  (string and array `detail`), network failure, timeout, base-URL joining.
-- **Safety:** dangerous answers hide steps until every item is acknowledged;
-  summary, escalation warning and sources stay visible; NOT_FOUND shows
-  escalation.
-- **Speech:** recognition and synthesis hooks with mocked
-  `SpeechRecognition` / `speechSynthesis`, unsupported-browser fallback,
-  permission-denied handling, stop speaking.
+## Accessibility
+
+- Checked with axe-core in Chromium on every page and state (answers,
+  safety panels, listening, loading, errors, history): no violations,
+  including colour contrast. The same checks run in the test suite (contrast
+  excluded there, as jsdom cannot compute it).
+- Native buttons, links, radios and checkboxes; every control has an
+  accessible name; the active page is marked `aria-current="page"`.
+- One `h1` per page; focus moves to it on page change; skip link.
+- Visible 3px focus outlines; no keyboard traps; Ctrl+Enter submits.
+- Status and loading messages use `role="status"`; errors and safety
+  alerts use `role="alert"`.
+- Controls are at least 44px tall (primary actions 56px; safety checklist rows
+  56px+); animations stop with `prefers-reduced-motion`.
+- Typing works without voice, and voice is optional everywhere.
+
+## Production deployment
+
+**Do not deploy the worker app and backend publicly without authentication.**
+The FastAPI backend currently has no authentication and allows all origins
+(`allow_origins=["*"]`); `GET /history/{machine_id}` would expose maintenance
+records to anyone who can reach it. The frontend has no login of its own.
+
+Before any deployment beyond a local or private demo network:
+
+1. **Access control:** put the app and API behind organisation sign-in (SSO /
+   identity-aware proxy / VPN), or add authentication to the backend and pass
+   credentials from the app. Restrict CORS to the app's origin.
+2. **HTTPS everywhere:** required for the microphone (speech-to-text) and to
+   avoid mixed-content blocking. The backend must be HTTPS too.
+3. **API URL:** build with `VITE_API_BASE_URL=https://<backend-host>`, or
+   serve the app and API from one origin behind a reverse proxy that maps
+   `/api/*` to the backend (then leave `VITE_API_BASE_URL` empty). The Vite
+   `/api` proxy exists in development only.
+4. **No secrets in the frontend:** every `VITE_*` value is public. Gemini and
+   Supabase keys belong only to the backend.
+5. **Browsers:** voice input needs Chrome, Edge or Safari (see Voice input);
+   other browsers fall back to typing. Read aloud needs `speechSynthesis`.
+6. **QR codes:** encode `https://<app-host>/?machine=<machine_id>` with the
+   machine ID exactly as stored by the backend.
+
+## Status
+
+| Area | Verified with | Still needs |
+|---|---|---|
+| `/ask` rendering (all statuses, safety gating, references) | mock responses in tests; in-browser checks with mocked `fetch` | live FastAPI + Gemini answers |
+| Backend unavailable, Retry, Cancel, New question | real 502 from the dev proxy (backend down) + tests | real 503 / timeouts from the backend |
+| Repair history | mock responses; real 502 path | real Supabase `repair_history` rows |
+| Voice input | tests; real permission-denied path in Chromium | speaking on Android Chrome / iOS Safari |
+| Read aloud | tests; real playback and stop in Chromium | phone voices and audibility on site |
+| Layout and accessibility | axe-core + measurements at 320 / 375 / 768 / 1440 px | physical phones, gloves, bright light |
+
+### Open issues for the backend team
+
+1. **Safety policy:** steps are withheld for every current-format `SUCCESS`
+   and `SAFETY_ALERT` until the team confirms when repair steps may be shown
+   (see Safety states).
+2. `ai/schemas.py` on latest `origin/main` (commit `5c9a0ee`) indents
+   `problem_type` with 3 spaces instead of 4: expected `IndentationError` on
+   import, so that backend version should not start.
+3. Parse failures are returned as `NOT_FOUND` with the exception text in
+   `summary` (the app hides it); a distinct status would be clearer.
+4. Machine ID format (`compressor-01` vs `compressor_01`) must match between
+   QR codes, `docs/lists/machines.json` and the database; the app never
+   normalizes IDs.
+5. No `repair_history` table definition in the repo; the app reads only
+   `problem`, `action`, `outcome`, `created_at` and `id`.
+6. Backend authentication and CORS (see Production deployment).

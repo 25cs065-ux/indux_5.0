@@ -16,4 +16,3 @@ export function apiUrl(path: string): string {
   return `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`
 }
 
-export const IS_DEV = import.meta.env.DEV

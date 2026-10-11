@@ -62,6 +62,10 @@ function errorForStatus(status: number, body: unknown): ApiError {
  * fetch() with a timeout and caller cancellation, translating every failure
  * into an ApiError. Resolves with the parsed JSON body of a 2xx response
  * (undefined if the body is not JSON).
+ *
+ * Cancellation and timeouts do not depend on fetch() honouring the abort
+ * signal: both the request and the body read are raced against it, so a
+ * network layer that never settles cannot leave the app stuck loading.
  */
 async function requestJson(path: string, init: RequestInit, options: RequestOptions, defaultTimeout: number): Promise<unknown> {
   if (options.signal?.aborted) throw new ApiError('aborted', DEFAULT_MESSAGES.aborted)
@@ -76,21 +80,38 @@ async function requestJson(path: string, init: RequestInit, options: RequestOpti
   const onCallerAbort = () => controller.abort()
   options.signal?.addEventListener('abort', onCallerAbort, { once: true })
 
+  const aborted = new Promise<never>((_, reject) => {
+    controller.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), {
+      once: true,
+    })
+  })
+  // Avoid an unhandled rejection when the request finishes normally.
+  aborted.catch(() => {})
+
   try {
     let response: Response
     try {
-      response = await fetch(apiUrl(path), {
-        ...init,
-        headers: { Accept: 'application/json', ...init.headers },
-        signal: controller.signal,
-      })
+      response = await Promise.race([
+        fetch(apiUrl(path), {
+          ...init,
+          headers: { Accept: 'application/json', ...init.headers },
+          signal: controller.signal,
+        }),
+        aborted,
+      ])
     } catch {
       if (timedOut) throw new ApiError('timeout', DEFAULT_MESSAGES.timeout)
       if (controller.signal.aborted) throw new ApiError('aborted', DEFAULT_MESSAGES.aborted)
       throw new ApiError('network', DEFAULT_MESSAGES.network)
     }
 
-    const body = await readJson(response)
+    let body: unknown
+    try {
+      body = await Promise.race([readJson(response), aborted])
+    } catch {
+      // Only the abort race can reject here; readJson never throws.
+      body = undefined
+    }
     // A timeout can fire while the body is still downloading.
     if (timedOut) throw new ApiError('timeout', DEFAULT_MESSAGES.timeout)
     if (controller.signal.aborted) throw new ApiError('aborted', DEFAULT_MESSAGES.aborted)

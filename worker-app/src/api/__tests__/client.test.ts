@@ -267,3 +267,32 @@ describe('askQuestion with the current backend format', () => {
     expect(JSON.stringify(result)).not.toMatch(/Failed to parse|KeyError/)
   })
 })
+
+describe('cancellation and timeout do not depend on fetch honouring abort', () => {
+  /** A broken network layer: never settles and ignores the abort signal. */
+  const stuckFetch = () => fetchMock.mockImplementation(() => new Promise<Response>(() => {}))
+
+  it('Cancel still ends the request', async () => {
+    stuckFetch()
+    const controller = new AbortController()
+    const pending = catchApiError(askQuestion('x', 'compressor-01', { signal: controller.signal }))
+    controller.abort()
+    expect((await pending).kind).toBe('aborted')
+  })
+
+  it('the timeout still fires', async () => {
+    vi.useFakeTimers()
+    stuckFetch()
+    const pending = catchApiError(askQuestion('x', 'compressor-01', { timeoutMs: 1000 }))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect((await pending).kind).toBe('timeout')
+  })
+
+  it('a body that never finishes downloading still times out', async () => {
+    vi.useFakeTimers()
+    fetchMock.mockResolvedValue({ ok: true, status: 200, json: () => new Promise(() => {}) } as unknown as Response)
+    const pending = catchApiError(askQuestion('x', 'compressor-01', { timeoutMs: 1000 }))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect((await pending).kind).toBe('timeout')
+  })
+})

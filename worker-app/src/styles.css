@@ -6,10 +6,13 @@
   --paper-raised: #faf8f3;
   --ink: #1b1b19;
   --ink-2: #45433e;
-  --ink-3: #6f6b62;
+  /* Muted text: at least 5.4:1 on paper and on the tinted panels. */
+  --ink-3: #5f5b53;
   --rule: #d6d0c4;
   --rule-strong: #1b1b19;
   --signal: #c2410c;
+  /* Orange for text on tinted backgrounds (>= 5.2:1); --signal stays for accents. */
+  --signal-ink: #a8380a;
   --signal-tint: #f6e6dc;
   --hazard: #a3201a;
   --hazard-tint: #f7e3e0;
@@ -675,7 +678,7 @@ fieldset {
 }
 
 .notice--escalate .notice-code {
-  color: var(--signal);
+  color: var(--signal-ink);
 }
 
 /* ---------- Result ---------- */
@@ -1383,7 +1386,7 @@ fieldset {
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--signal);
+  color: var(--signal-ink);
 }
 
 .listening-lang {

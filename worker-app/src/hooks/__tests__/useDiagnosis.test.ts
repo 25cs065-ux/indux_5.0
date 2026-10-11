@@ -183,3 +183,17 @@ describe('useDiagnosis reset and retry', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+describe('useDiagnosis with a network layer that ignores abort', () => {
+  it('Cancel frees the request so the next Diagnose works', async () => {
+    fetchMock.mockImplementationOnce(() => new Promise<Response>(() => {}))
+    const { result } = renderHook(() => useDiagnosis())
+    act(() => void result.current.submit(request))
+    await act(async () => result.current.cancel())
+    await waitFor(() => expect(result.current.state.phase).toBe('idle'))
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(envelope(okAnswer())))
+    await act(async () => void (await result.current.submit(request)))
+    expect(result.current.state.phase).toBe('success')
+  })
+})
