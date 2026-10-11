@@ -1,0 +1,22 @@
+# ingest/requirements.txt
+#
+# Python dependencies for the ingest module.
+#
+# Install all at once:
+#   py -m pip install -r ingest/requirements.txt
+
+# --- Core ingestion --------------------------------------------------------
+pypdf>=4.0.0              # Fallback PDF text extractor (pure-Python, no C build)
+pymupdf>=1.24.0           # Primary PDF extractor — bounding-box positions, fast
+
+# --- Embedding (Gemini) ----------------------------------------------------
+# Uses gemini-embedding-001 (3072 dims) via Google GenAI SDK to match brain.py.
+# Requires GEMINI_API_KEY in ingest/.env.
+google-genai>=1.0.0       # Google GenAI Python SDK (same package used by ai/)
+
+# --- Database (Supabase) ---------------------------------------------------
+supabase>=2.0.0           # Supabase Python client (upsert chunks + embeddings)
+python-dotenv>=1.0.0      # Load env vars from ingest/.env at runtime
+
+# --- Development / testing -------------------------------------------------
+pytest>=8.0.0             # Test runner

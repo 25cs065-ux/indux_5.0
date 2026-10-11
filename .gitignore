@@ -1,12 +1,25 @@
-# Manual PDFs
-docs/manuals/*.pdf
-
 # Python virtual environment
 .venv/
+venv/
 
 # Environment variables and API secrets
 .env
+.env.*
 
 # Python cache files
 __pycache__/
 *.py[cod]
+*.pyo
+
+# Manual PDFs
+docs/manuals/*.pdf
+
+# Test and tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE and OS files
+.vscode/
+.DS_Store
+Thumbs.db
