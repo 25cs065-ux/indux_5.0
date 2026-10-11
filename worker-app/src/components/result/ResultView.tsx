@@ -1,6 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AskResult } from '../../api/index.ts'
+import { useSpeechSynthesis } from '../../hooks/useSpeechSynthesis.ts'
 import { acknowledgementItemsOf, safetyStateOf, stepsGateOf } from '../../lib/safety.ts'
+import { buildReadAloudScript } from '../../speech/readAloud.ts'
+import ReadAloud from './ReadAloud.tsx'
 import SafetyPanel from './SafetyPanel.tsx'
 import SourcesList from './SourcesList.tsx'
 import StepsList from './StepsList.tsx'
@@ -11,7 +14,8 @@ interface Props {
 
 /**
  * One diagnosis. Mount with a fresh `key` per response so acknowledgement
- * never carries over from a previous answer.
+ * never carries over from a previous answer. Unmounting also stops any
+ * speech, so a new diagnosis or a changed answer always silences the old one.
  */
 export default function ResultView({ result }: Props) {
   const { answer } = result
@@ -24,6 +28,16 @@ export default function ResultView({ result }: Props) {
 
   const toggle = (index: number) =>
     setChecked((prev) => prev.map((value, i) => (i === index ? !value : value)))
+
+  const stepsVisible = gate === 'allowed' || (gate === 'requires_ack' && acknowledged)
+  const tts = useSpeechSynthesis()
+  const { stop: stopSpeaking } = tts
+
+  // What is being read must match the screen: if steps lock or unlock while
+  // speaking, stop rather than read a script that is now out of date.
+  useEffect(() => {
+    stopSpeaking()
+  }, [stepsVisible, stopSpeaking])
 
   return (
     <article className="result">
@@ -57,6 +71,14 @@ export default function ResultView({ result }: Props) {
         <span className="visually-hidden">Your question: </span>
         {result.question}
       </blockquote>
+
+      <ReadAloud
+        supported={tts.supported}
+        speaking={tts.isSpeaking}
+        error={tts.error}
+        onRead={() => void tts.speak(buildReadAloudScript(result, { stepsVisible }))}
+        onStop={tts.stop}
+      />
 
       {result.issues.length > 0 && <ResponseIssues issues={result.issues} />}
 

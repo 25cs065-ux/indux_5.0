@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import DiagnosisPanel from './components/DiagnosisPanel.tsx'
 import Header from './components/Header.tsx'
-import IssueForm from './components/IssueForm.tsx'
+import IssueForm, { QUESTION_MAX_LENGTH } from './components/IssueForm.tsx'
 import MachineSelect from './components/MachineSelect.tsx'
 import Section from './components/Section.tsx'
 import { useDiagnosis } from './hooks/useDiagnosis.ts'
+import { useSpeechRecognition } from './hooks/useSpeechRecognition.ts'
 import { initialMachineId, saveLastMachine } from './lib/machineParam.ts'
+import { cancelAllSpeech } from './speech/synthesis.ts'
+import { composeQuestion } from './speech/transcript.ts'
 
 export default function App() {
   const [machineId, setMachineId] = useState(() => initialMachineId(window.location.search))
@@ -14,6 +17,25 @@ export default function App() {
   const [questionError, setQuestionError] = useState<string | null>(null)
   const { state, submit, cancel, retry, isLoading } = useDiagnosis()
   const outputRef = useRef<HTMLDivElement>(null)
+
+  // Text in the field when recording started. Each recognition update
+  // rebuilds the question from this, so duplicate events cannot repeat words.
+  const dictationBase = useRef('')
+  const speech = useSpeechRecognition({
+    onTranscript: (spoken) => setQuestion(composeQuestion(dictationBase.current, spoken, QUESTION_MAX_LENGTH)),
+  })
+
+  const handleRecordToggle = () => {
+    if (speech.isActive) {
+      speech.stop()
+      return
+    }
+    // Silence read-aloud so the microphone does not pick it up.
+    cancelAllSpeech()
+    dictationBase.current = question
+    setQuestionError(null)
+    speech.start()
+  }
 
   // On narrow screens the diagnosis sits below the form: jump to it when a
   // request starts and when it settles, so the worker sees progress and the
@@ -27,6 +49,9 @@ export default function App() {
 
   const handleSubmit = () => {
     if (isLoading) return
+    // Never keep listening into a diagnosis; text already recognised stays.
+    speech.abort()
+    cancelAllSpeech()
     const mError = machineId.trim() ? null : 'Select or enter a machine ID.'
     const qError = question.trim() ? null : 'Describe the issue before diagnosing.'
     setMachineError(mError)
@@ -65,6 +90,13 @@ export default function App() {
               onSubmit={handleSubmit}
               isLoading={isLoading}
               error={questionError}
+              speech={{
+                support: speech.support,
+                status: speech.status,
+                interim: speech.interim,
+                error: speech.error,
+                onToggle: handleRecordToggle,
+              }}
             />
           </Section>
         </div>

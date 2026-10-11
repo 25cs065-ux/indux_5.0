@@ -87,6 +87,96 @@ Mock responses exist only in `src/api/__tests__/`. The app itself has no hard-co
 
 The UI never states that equipment is safe.
 
+## Voice input (`src/hooks/useSpeechRecognition.ts`)
+
+Record issue uses the browser's built-in Web Speech API
+(`SpeechRecognition` / `webkitSpeechRecognition`). No paid speech service is
+used and nothing is added to the backend.
+
+How it behaves:
+
+- The recognizer is created only when the worker presses **Record issue**, so
+  the browser asks for microphone permission at that moment, never on page load.
+- While recording, a **LISTENING** strip shows a level-meter animation (static
+  when reduced motion is on) and interim words. The button becomes **Stop
+  recording**. The text field is read-only so typing cannot clash with
+  recognised text.
+- Final text goes into the issue field after anything already typed. Each
+  update rebuilds the field from "text before recording + this session's
+  transcript", so repeated or cumulative recognition events cannot duplicate
+  words.
+- The question is **never submitted automatically**. After stopping, the
+  worker edits the text and presses Diagnose.
+- Pressing Diagnose, or leaving the page, stops recording immediately.
+- Errors shown to the worker: microphone blocked, no microphone, no speech
+  detected, no network, language not available, unexpected failure. Browsers
+  without the API, or pages not served over HTTPS, show Record issue disabled
+  with an explanation.
+- Language is `en-IN` (`src/speech/support.ts`), which handles Indian English
+  and Hinglish best of the available options.
+
+### Browser support
+
+| Browser | Status |
+|---|---|
+| Chrome (Android, Windows, macOS) | Supported. Audio is sent to Google's speech service by the browser, so an internet connection is required. |
+| Edge (Windows) | Supported (uses Microsoft's online service). |
+| Safari (iOS 14.5+, macOS) | Supported through `webkitSpeechRecognition`; uses Apple's service. Behaviour differs in places (sessions may end on silence), and must be tested on a real device. |
+| Samsung Internet | Generally works (Chromium-based); test before relying on it. |
+| Firefox | Not supported. Record issue is disabled; workers type instead. |
+| In-app webviews (e.g. opened from a QR scanner app) | Often blocked. Open the link in Chrome or Safari. |
+
+Privacy note: on supported browsers the speech is processed by the browser
+vendor's speech service, not by Indux. Nothing reaches the Indux backend until
+the worker presses Diagnose.
+
+### HTTPS and phones
+
+Browsers only allow the microphone in a secure context: `https://` or
+`http://localhost`. Opening `http://<laptop-ip>:5173` on a phone loads the app
+but Record issue is disabled ("needs a secure (HTTPS) connection"). Use one of
+the options in the HTTPS mobile testing plan below. The quickest is
+`adb reverse tcp:5173 tcp:5173` with an Android phone over USB, then open
+`http://localhost:5173` in Chrome on the phone.
+
+If the worker blocks the microphone, the browser remembers it. To re-enable:
+Chrome on Android: tap the icon beside the address, open **Permissions**, set
+**Microphone** to Allow. Safari on iOS: **Settings → Safari → Microphone**.
+
+## Read aloud (`src/speech/readAloud.ts`, `src/hooks/useSpeechSynthesis.ts`)
+
+**Read aloud** and **Stop speaking** sit at the top of every diagnosis. They
+use the browser's built-in `speechSynthesis`; no paid or external service.
+
+What is read, in the order shown on screen:
+
+1. Demo / incomplete-response notes, if any
+2. Safety: the hazard warning and every checklist item, or the "status
+   unknown" / "no checklist" warnings, or "no hazard flagged, not a safety
+   clearance"
+3. Escalation (OK) or "No verified manual guidance was found. Escalation is
+   required." (NOT_FOUND)
+4. Summary
+5. Steps, **only if they are visible on screen**. Locked or withheld steps are
+   described ("2 troubleshooting steps are locked until every safety check is
+   confirmed") but never read
+6. "Manual references are listed on screen" (file names are not read)
+7. Repair history, labelled as context only
+8. The fixed safety disclaimer
+
+Machine IDs, status codes, field names, manual file names and JSON are never
+spoken.
+
+Speech stops when the worker presses Stop speaking, starts a new diagnosis,
+starts recording (so the microphone does not hear it), when a new answer
+replaces the old one, or when a safety box is unticked and steps lock again.
+Pressing Read aloud while already speaking is ignored. Browsers without
+`speechSynthesis` show both buttons disabled with a note.
+
+A voice for `en-IN` is preferred, then any English voice. Windows desktops
+usually only have en-US voices; Android and iOS usually include an Indian
+English voice.
+
 ## HTTPS mobile testing plan
 
 Browsers only allow microphone access (speech-to-text) in a *secure context*:
@@ -123,8 +213,8 @@ internet.
 2. ✅ API layer: typed client for `/ask` and `/health`, error handling (503, 422, network, timeout), response validation, tests
 3. ✅ Worker interface: machine selection or entry, editable question, Diagnose via `/ask`, loading, error and retry states, safety state notice (no steps shown yet)
 4. ✅ Diagnosis view: safety checklist with per-item acknowledgement before steps on flagged answers (summary, escalation and references always visible), numbered steps with check questions, manual references, distinct NOT_FOUND block, repair history shown separately as context, incomplete-response notice
-5. Speech-to-text (Web Speech API) with an editable transcript, sent via `/ask`
-6. Read Aloud / Stop Speaking (speechSynthesis)
+5. ✅ Speech-to-text (Web Speech API): Record / Stop recording, listening indicator, interim text, editable transcript, no auto-submit, error handling; sent via `/ask` only when Diagnose is pressed
+6. ✅ Read Aloud / Stop Speaking (speechSynthesis), following the on-screen safety gating
 7. Polish, accessibility, deployment
 
 ### Automated testing (added in later stages)

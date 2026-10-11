@@ -83,7 +83,8 @@ describe('ResultView: hazard flagged', () => {
   it('withholds steps when a hazard is flagged without a checklist', () => {
     render(<ResultView result={result({ isDangerous: true, safetyChecklist: [] })} />)
     expect(screen.queryAllByRole('checkbox')).toHaveLength(0)
-    expect(screen.queryAllByRole('button')).toHaveLength(0)
+    // Only the read-aloud controls exist; nothing can reveal the steps.
+    expect(screen.queryAllByRole('button').map((b) => b.textContent?.trim())).toEqual(['Read aloud', 'Stop speaking'])
     expect(stepsList()).toBeNull()
     expect(screen.getByText('Withheld · 2 steps')).toBeTruthy()
     expect(screen.getAllByText(/qualified supervisor/).length).toBeGreaterThan(0)
