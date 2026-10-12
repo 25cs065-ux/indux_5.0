@@ -1,0 +1,90 @@
+{
+  "source": "docs/manuals/GA15-26_Instruction_Book.pdf",
+  "verified_by": "visual reading of PDF pages 127-129 (scanned images, rendered at 150 dpi); printed page numbers 125-127",
+  "note": "Blank condition cells continue the previous condition, including across page breaks (p.127->128 and p.128->129).",
+  "tables": [
+    {
+      "title": "Faults and remedies, compressor",
+      "conditions": [
+        {"condition": "Compressor starts running, but does not load after a delay time", "pages": [127], "rows": [
+          {"fault": "Solenoid valve out of order", "remedy": "Replace valve"},
+          {"fault": "Inlet valve stuck in closed position", "remedy": "Have valve checked"},
+          {"fault": "Leak in control air tubes", "remedy": "Replace leaking tubes"},
+          {"fault": "Minimum pressure valve leaking (when net is depressurized)", "remedy": "Have valve checked"}
+        ]},
+        {"condition": "Compressor does not unload, safety valve blows", "pages": [127], "rows": [
+          {"fault": "Solenoid valve out of order", "remedy": "Replace valve"},
+          {"fault": "Inlet valve does not close", "remedy": "Have valve checked"}
+        ]},
+        {"condition": "Condensate is not discharged from condensate separator during loading", "pages": [127], "rows": [
+          {"fault": "Discharge tube clogged", "remedy": "Check and correct as necessary"}
+        ]},
+        {"condition": "Compressor air output or pressure below normal", "pages": [127], "rows": [
+          {"fault": "Air consumption exceeds air delivery of compressor", "remedy": "Check equipment connected"},
+          {"fault": "Choked air filter element", "remedy": "Replace filter element"},
+          {"fault": "Solenoid valve malfunctioning", "remedy": "Replace valve"},
+          {"fault": "Leak in control air tubes", "remedy": "Replace leaking tubes"},
+          {"fault": "Inlet valve does not fully open", "remedy": "Have valve checked"},
+          {"fault": "Air leakage", "remedy": "Have leaks repaired"},
+          {"fault": "Safety valve leaking", "remedy": "Have valve replaced"},
+          {"fault": "Compressor element out of order", "remedy": "Consult Atlas Copco"}
+        ]},
+        {"condition": "Excessive oil consumption; oil carry-over through discharge line", "pages": [127, 128], "rows": [
+          {"fault": "Incorrect oil causing foam", "remedy": "Change to correct oil"},
+          {"fault": "Oil level too high", "remedy": "Check for overfilling. Release pressure and drain oil to correct level."},
+          {"fault": "Oil separator defective", "remedy": "Replace oil separator element"},
+          {"fault": "Malfunctioning of the scavenge line", "remedy": "Replace non-return valve in the scavenge line"}
+        ]},
+        {"condition": "Safety valve blows after loading", "pages": [128], "rows": [
+          {"fault": "Inlet valve malfunctioning", "remedy": "Have valve checked"},
+          {"fault": "Minimum pressure valve malfunctioning", "remedy": "Have valve checked"},
+          {"fault": "Safety valve out of order", "remedy": "Have valve replaced"},
+          {"fault": "Compressor element out of order", "remedy": "Consult Atlas Copco"},
+          {"fault": "Oil separator element clogged", "remedy": "Replace oil separator element"}
+        ]},
+        {"condition": "Compressor element outlet temperature or delivery air temperature above normal", "pages": [128], "rows": [
+          {"fault": "Oil level too low", "remedy": "Check and correct"},
+          {"fault": "On air-cooled compressors, insufficient cooling air or cooling air temperature too high", "remedy": "Check for cooling air restriction or improve ventilation of the compressor room. Avoid recirculation of cooling air. If installed, check capacity of compressor room fan"},
+          {"fault": "Oil cooler clogged", "remedy": "Clean cooler"},
+          {"fault": "Bypass valve malfunctioning", "remedy": "Have valve tested"},
+          {"fault": "Air cooler clogged", "remedy": "Clean cooler"},
+          {"fault": "Compressor element out of order", "remedy": "Consult Atlas Copco Customer Centre"}
+        ]}
+      ]
+    },
+    {
+      "title": "Faults and remedies, dryer",
+      "conditions": [
+        {"condition": "Pressure dew point too high", "pages": [128], "rows": [
+          {"fault": "Air inlet temperature too high", "remedy": "Check and correct; if necessary, clean the aftercooler of the compressor"},
+          {"fault": "Ambient temperature too high", "remedy": "Check and correct; if necessary, draw cooling air via a duct from a cooler place or relocate the compressor"},
+          {"fault": "Shortage of refrigerant", "remedy": "Have circuit checked for leaks and recharged"},
+          {"fault": "Refrigerant compressor does not run", "remedy": "See below"},
+          {"fault": "Evaporator pressure too high", "remedy": "See below"},
+          {"fault": "Condenser pressure too high", "remedy": "See below"}
+        ]},
+        {"condition": "Condenser pressure too high or too low", "pages": [128, 129], "rows": [
+          {"fault": "Fan control switch out of order", "remedy": "Replace"},
+          {"fault": "Fan blades or fan motor out of order", "remedy": "Check fan/fan motor"},
+          {"fault": "Ambient temperature too high", "remedy": "Check and correct; if necessary, draw cooling air via a duct from a cooler place or relocate the compressor"},
+          {"fault": "Condenser externally clogged", "remedy": "Clean condenser"}
+        ]},
+        {"condition": "Compressor stops or does not start", "pages": [129], "rows": [
+          {"fault": "Electric power supply to compressor is interrupted", "remedy": "Check and correct as necessary"},
+          {"fault": "Thermal protection of refrigerant compressor motor has tripped", "remedy": "Motor will restart when motor windings have cooled down"}
+        ]},
+        {"condition": "Electronic condensate drain remains inoperative", "pages": [129], "rows": [
+          {"fault": "Electronic drain system clogged", "remedy": "Have system inspected. Clean the filter of the automatic drain by opening the manual drain valve. Check functioning of the drain by pushing the test button."}
+        ]},
+        {"condition": "Condensate trap continuously discharges air and water", "pages": [129], "rows": [
+          {"fault": "Automatic drain out of order", "remedy": "Have system checked. If necessary, replace the automatic drain."}
+        ]},
+        {"condition": "Evaporator pressure is too high or too low at unload", "pages": [129], "rows": [
+          {"fault": "Hot gas bypass valve incorrectly set or out of order", "remedy": "Have hot gas bypass valve adjusted"},
+          {"fault": "Condenser pressure too high or too low", "remedy": "See above"},
+          {"fault": "Shortage of refrigerant", "remedy": "Have circuit checked for leaks and recharged if necessary"}
+        ]}
+      ]
+    }
+  ]
+}

@@ -71,6 +71,13 @@ except ImportError:
         ocr_pdf_pages = None    # type: ignore[assignment]
         _OcrError = Exception   # type: ignore[misc, assignment]
 
+# Manual-specific override for the GA15-26 troubleshooting tables (verified
+# transcription; see ingest/troubleshooting_override.py). Not a parser fix.
+try:
+    from ingest.troubleshooting_override import apply_troubleshooting_override
+except ImportError:
+    from .troubleshooting_override import apply_troubleshooting_override  # type: ignore[no-redef]
+
 # ---------------------------------------------------------------------------
 # Required pypdf import (fallback extractor + PDF writer used in tests)
 # ---------------------------------------------------------------------------
@@ -354,6 +361,10 @@ def ingest_pdf(
                     )
                 )
                 chunk_index += 1
+
+    # GA15-26_Instruction_Book only: replace the OCR-misaligned troubleshooting
+    # rows (pp. 127-129) with verified condition chunks. No-op for other docs.
+    chunks = apply_troubleshooting_override(doc_id, chunks)
 
     return IngestResult(
         doc_id=doc_id,
