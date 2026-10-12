@@ -22,7 +22,24 @@ supabase: Client = create_client(
 
 SAFETY_TRIGGERS = [
     {
-        "keywords": ["electrical", "wiring", "high voltage", "capacitor", "shock", "motor terminal"],
+        # S1: opening panels / covers while energised
+        "keywords": [
+            "open panel", "remove cover", "open door", "open cover",
+            "open the panel", "remove the cover", "open the door",
+            "electrical cubicle", "control panel",
+        ],
+        "checklist": [
+            "Perform Lockout/Tagout (LOTO) before opening any panel or cover.",
+            "Verify zero electrical energy with a calibrated multimeter.",
+            "Wear insulated rubber gloves and eye protection."
+        ]
+    },
+    {
+        # S2: pressurised fittings / drain / valve work
+        "keywords": [
+            "electrical", "wiring", "high voltage", "capacitor", "shock", "motor terminal",
+            "burning smell", "sparks", "spark", "trip", "tripped",
+        ],
         "checklist": [
             "Perform Lockout/Tagout (LOTO) on the main breaker.",
             "Verify zero electrical energy with a calibrated multimeter.",
@@ -30,7 +47,12 @@ SAFETY_TRIGGERS = [
         ]
     },
     {
-        "keywords": ["high pressure", "receiver tank", "blowdown", "pressure relief", "burst"],
+        # S2: pressurised fittings / drain / valve work
+        "keywords": [
+            "high pressure", "receiver tank", "blowdown", "pressure relief", "burst",
+            "loosen", "disconnect", "pressure line", "safety valve", "drain condensate",
+            "drain valve", "loosen a hose", "loosen a fitting",
+        ],
         "checklist": [
             "Turn off the unit and vent all air until pressure gauge reads 0 PSI.",
             "Do not loosen any fitting or hose under active pressure.",
@@ -38,13 +60,26 @@ SAFETY_TRIGGERS = [
         ]
     },
     {
+        # S3: rotating machinery
         "keywords": ["belt", "pulley", "flywheel", "rotating", "fan blade"],
         "checklist": [
             "Power down and tag out machine.",
             "Ensure drive pulleys have completely stopped rotating.",
             "Do not place fingers between belt and pulley groove."
         ]
-    }
+    },
+    {
+        # S4: hot surfaces / hot oil
+        "keywords": [
+            "hot", "overheat", "overheating", "oil change", "drain oil",
+            "very hot", "getting hot", "hot surface", "burn", "scald",
+        ],
+        "checklist": [
+            "Allow the machine to cool completely before touching hot surfaces.",
+            "Wear heat-resistant gloves when handling hot oil or components.",
+            "Do not drain oil while the machine is hot or pressurised."
+        ]
+    },
 ]
 
 SIMILARITY_DISTANCE_CUTOFF = 0.65
@@ -106,8 +141,8 @@ def search_chunks(question: str, top_k: int = 5) -> List[Dict[str, Any]]:
     return combined
 
 def ask(
-    question: str, 
-    machine_id: Optional[str] = "Compressor #01", 
+    question: str,
+    machine_id: Optional[str] = "compressor-01",
     repair_history: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     safety_items = safety_check(question)
@@ -123,7 +158,9 @@ def ask(
             status="NOT_FOUND",
             problem_type="other",
             summary="This issue or error code was not found in the verified manual.",
+            is_dangerous=bool(safety_items),
             safety_checklist=safety_items,
+            history_note="",
             steps=[],
             sources=[],
             escalate=True,
@@ -178,17 +215,23 @@ OUTPUT RULES:
     try:
         parsed_data = json.loads(response.text)
         parsed_data["search_score"] = top_distance
+        parsed_data.setdefault("history_note", "")
         if safety_items:
             existing = parsed_data.get("safety_checklist", [])
             parsed_data["safety_checklist"] = list(dict.fromkeys(existing + safety_items))
-# If safety items were triggered, change status to SAFETY_ALERT
+            parsed_data["is_dangerous"] = True
+            # If safety items were triggered, change status to SAFETY_ALERT
             if parsed_data.get("status") == "SUCCESS":
                 parsed_data["status"] = "SAFETY_ALERT"
+        else:
+            parsed_data.setdefault("is_dangerous", False)
         return parsed_data
     except Exception as e:
         return QueryResponse(
             status="NOT_FOUND",
             summary=f"Failed to parse AI response: {str(e)}",
+            is_dangerous=bool(safety_items),
+            history_note="",
             steps=[],
             sources=[],
             escalate=True,
