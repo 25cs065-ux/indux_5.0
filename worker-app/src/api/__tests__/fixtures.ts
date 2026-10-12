@@ -138,3 +138,20 @@ export function historyRow(overrides: Record<string, unknown> = {}) {
 export function historyEnvelope(history: unknown, machineId = 'compressor-01') {
   return { status: 'success', machine_id: machineId, history }
 }
+
+// ---- Latest main (ai/schemas.py @ 0eaa11f): current fields plus is_dangerous / history_note ----
+
+/** SUCCESS as brain.py now returns it when no safety keyword matched. */
+export function mainSuccessAnswer() {
+  return { ...successAnswer(), is_dangerous: false, history_note: '' }
+}
+
+/** SAFETY_ALERT as brain.py now returns it (keyword rules set is_dangerous=true). */
+export function mainSafetyAlertAnswer() {
+  return { ...safetyAlertAnswer(), is_dangerous: true, history_note: '' }
+}
+
+/** NOT_FOUND as brain.py now returns it. */
+export function mainNotFoundAnswer() {
+  return { ...currentNotFoundAnswer(), is_dangerous: false, history_note: '' }
+}

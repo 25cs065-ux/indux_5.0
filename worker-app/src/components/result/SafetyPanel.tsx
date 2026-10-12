@@ -101,7 +101,7 @@ export default function SafetyPanel({ state, checklist, ackItems, checked, onTog
           Safety status could not be determined
         </h3>
         <p className="safety-body">
-          The response did not say whether this job is hazardous, so repair steps are withheld. Treat the machine
+          This response does not give a verified safety status for this job, so repair steps are withheld. Treat the machine
           as hazardous and contact the lead engineer.
         </p>
         {checklist.length > 0 && (

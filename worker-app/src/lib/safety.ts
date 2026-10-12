@@ -28,22 +28,29 @@ export function safetyStateOf(answer: TroubleshootingAnswer): SafetyState {
   if (answer.status === 'SAFETY_ALERT') return 'alert'
   if (answer.internalError) return 'uncertain'
 
+  // A new-format SUCCESS status (main sends it alongside is_dangerous). Its
+  // is_dangerous=false is the backend default whenever no safety keyword
+  // matched, so it is not treated as a verified "no hazard" signal until the
+  // safety policy is confirmed: see CURRENT_FORMAT_EMPTY_CHECKLIST_MEANS_NOT_FLAGGED.
+  const newFormatSuccess = answer.status === 'OK' && answer.rawStatus.trim().toUpperCase() === 'SUCCESS'
+
   if (answer.isDangerous === true) return 'flagged'
-  if (answer.isDangerous === false) {
-    // is_dangerous=false but checks were sent: trust the checks.
+  if (answer.isDangerous === false && !newFormatSuccess) {
+    // Legacy is_dangerous=false. If checks were sent anyway, trust the checks.
     return answer.safetyChecklist.length > 0 ? 'flagged' : 'not_flagged'
   }
 
-  // is_dangerous not provided.
+  // is_dangerous not provided, or a new-format SUCCESS with is_dangerous=false.
   if (
-    answer.format === 'current' &&
+    (answer.format === 'current' || newFormatSuccess) &&
     answer.safetyChecklist.length === 0 &&
     CURRENT_FORMAT_EMPTY_CHECKLIST_MEANS_NOT_FLAGGED
   ) {
     return 'not_flagged'
   }
-  // Legacy or mixed without is_dangerous, or a current-format checklist
-  // without SAFETY_ALERT (contradicts the contract): unknown.
+  // Legacy or mixed without is_dangerous, a new-format SUCCESS (policy
+  // pending), or a checklist without SAFETY_ALERT (contradicts the contract):
+  // unverified.
   return 'uncertain'
 }
 
