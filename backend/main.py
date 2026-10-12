@@ -1,12 +1,16 @@
 
 import os
 
+import tempfile
+from pathlib import Path
+
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from pydantic import BaseModel
 from supabase import create_client, Client
 
-from ai.brain import ask as ai_ask, diagnose_photo as ai_diagnose_photo
+from ai.brain import ask as ai_ask, diagnose_photo as ai_diagnose_photo, check_step_reply as ai_check_step_reply
 
 # ---------- Supabase ----------
 supabase_url = os.getenv("SUPABASE_URL")
@@ -35,7 +39,7 @@ app.add_middleware(
 
 class AskRequest(BaseModel):
     question: str
-    machine_id: str = "compressor_01"
+    machine_id: str = "compressor-01"
 
 
 class RepairRequest(BaseModel):
@@ -47,7 +51,7 @@ class RepairRequest(BaseModel):
 
 class VoiceAskRequest(BaseModel):
     transcript: str
-    machine_id: str = "compressor_01"
+    machine_id: str = "compressor-01"
 
 
 @app.get("/")
@@ -244,6 +248,41 @@ async def diagnose_photo_endpoint(image: UploadFile = File(...)):
     }
 
 
+class ChecklistStepRequest(BaseModel):
+    spoken_reply: str
+    step_question: str
+
+
+@app.post("/checklist/step")
+def check_step(request: ChecklistStepRequest):
+    """
+    Classify a technician's spoken reply to a checklist step question.
+
+    Body:
+        { "spoken_reply": "...", "step_question": "..." }
+
+    Response:
+        { "result": "yes" | "no" | "unclear" }
+    """
+    spoken_reply = request.spoken_reply.strip()
+    step_question = request.step_question.strip()
+
+    if not spoken_reply:
+        raise HTTPException(status_code=422, detail="spoken_reply must not be empty.")
+    if not step_question:
+        raise HTTPException(status_code=422, detail="step_question must not be empty.")
+
+    try:
+        result = ai_check_step_reply(spoken_reply, step_question)
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="The step classification service is temporarily unavailable."
+        )
+
+    return {"result": result}
+
+
 @app.get("/history/{machine_id}")
 def get_repair_history(machine_id: str):
     try:
@@ -265,3 +304,65 @@ def get_repair_history(machine_id: str):
             status_code=503,
             detail="Could not retrieve repair history."
         )
+
+# Location of the shipped PDF manuals (relative to repo root).
+_MANUALS_DIR = Path(__file__).resolve().parent.parent / "docs" / "manuals"
+
+
+@app.get("/manual-page")
+def get_manual_page(manual: str, page: int):
+    """
+    Render a single PDF manual page and return it as a PNG image.
+
+    Query parameters:
+        manual : The manual_title value stored in manual_chunks
+                 (e.g. "GA15-26_Instruction_Book").
+                 ".pdf" suffix is optional.
+        page   : 1-based page number to render.
+
+    Response:
+        PNG image bytes (Content-Type: image/png).
+
+    Errors:
+        400 — manual name contains path traversal characters
+        404 — PDF file not found in docs/manuals/
+        422 — page number < 1
+        503 — rendering failed (PyMuPDF unavailable or PDF corrupt)
+    """
+    if page < 1:
+        raise HTTPException(status_code=422, detail="page must be >= 1.")
+
+    # Normalise: strip path separators to prevent directory traversal.
+    safe_name = Path(manual).name
+    if safe_name != manual.replace("\\", "/").split("/")[-1]:
+        raise HTTPException(status_code=400, detail="Invalid manual name.")
+
+    # Accept names with or without the .pdf suffix.
+    stem = safe_name[:-4] if safe_name.lower().endswith(".pdf") else safe_name
+    pdf_path = _MANUALS_DIR / f"{stem}.pdf"
+
+    if not pdf_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"Manual '{stem}.pdf' not found."
+        )
+
+    try:
+        from ingest.round2 import save_page_images, ImageExportError
+        with tempfile.TemporaryDirectory() as tmp:
+            paths = save_page_images(pdf_path, tmp, page_numbers=[page])
+            if not paths:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Page {page} is out of range for this manual."
+                )
+            image_bytes = paths[0].read_bytes()
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not render the manual page."
+        )
+
+    return Response(content=image_bytes, media_type="image/png")

@@ -129,7 +129,7 @@ class TestVoiceAskHappyPath:
 
     def test_machine_id_default(self, client):
         resp = client.post("/voice-ask", json={"transcript": "Compressor is overheating"})
-        assert resp.json()["machine_id"] == "compressor_01"
+        assert resp.json()["machine_id"] == "compressor-01"
 
     def test_machine_id_explicit(self, client):
         resp = client.post(
