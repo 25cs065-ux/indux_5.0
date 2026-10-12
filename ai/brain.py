@@ -203,7 +203,7 @@ OUTPUT RULES:
 """
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=prompt,
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -251,7 +251,7 @@ Return JSON with:
 }
 """
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-2.5-flash",
         contents=[image_part, prompt],
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
@@ -285,7 +285,7 @@ Classify the answer into exactly one of these lowercase words:
 Return ONLY the single word.
 """
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt,
             config=types.GenerateContentConfig(temperature=0.0)
         )
